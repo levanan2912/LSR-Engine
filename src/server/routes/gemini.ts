@@ -114,7 +114,14 @@ gemini.post('/ask-gemini', async (c) => {
           if (!res.ok) {
             const errText = await res.text()
             console.warn(`⚠️  ${m.name}[key#${ki+1}] → ${res.status}`)
-            if (res.status === 429) { lastErr = new Error(errText); continue }       // quota → thử key khác
+            if (res.status === 429) {
+              // Phân biệt PREPAID_DEPLETED (key hết tiền) với quota thường
+              if (/prepayment|credits.{0,20}depleted/i.test(errText)) {
+                console.warn(`💳 [ask-gemini] key#${ki+1} PREPAID_DEPLETED — skip permanently`)
+                invalidKeys.add(ki)
+              }
+              lastErr = new Error(errText); continue  // thử key khác
+            }
             if (res.status === 503) { lastErr = new Error(errText); break }          // overload → thử model khác
             if (res.status === 401) { invalidKeys.add(ki); lastErr = new Error(errText); continue } // invalid key
             throw new Error(`Gemini ${res.status}: ${errText.slice(0, 200)}`)

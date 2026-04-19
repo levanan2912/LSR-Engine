@@ -361,7 +361,7 @@ export function parseGeminiResponse(responseText: string): Partial<AnalysisResul
 // Vị trí 0 = March, 1 = April, ...
 // Nếu số key vượt quá tên đặt sẵn, fallback sang "Key#N"
 
-export const KEY_NAMES: string[] = ['March', 'April', 'May', 'June', 'July']
+export const KEY_NAMES: string[] = ['April', 'March', 'June', 'July']  // May removed (PREPAID_DEPLETED)
 
 export function getKeyName(keyIndex: number): string {
   return KEY_NAMES[keyIndex] ?? `Key#${keyIndex + 1}`
@@ -618,26 +618,23 @@ async function callGeminiModelSafely(
 //   formatAnalysisData   — nhận historyData thô, tự slice(0,7).reverse() → ASC bên trong
 
 // ── Default model pool (used as fallback when DB is unavailable) ──────────────
-// ⚠️ TRẠNG THÁI THỰC TẾ (nguồn: test trực tiếp 2026-04-19):
-//   Model                         │ RPM │ RPD/key │ Trạng thái
-//   ──────────────────────────────┼─────┼─────────┼──────────────────────────
-//   gemini-2.5-flash-lite         │  10 │    20   │ ✅ HOẠT ĐỘNG — ưu tiên 1
-//   gemini-3.1-flash-lite-preview │  15 │   500   │ ✅ HOẠT ĐỘNG — ưu tiên 2 (nhưng hay 503)
-//   gemini-2.5-flash              │   5 │    20   │ ⚠️ quota 5 key đã gần hết hôm nay
-//   gemini-2.0-flash-lite         │  30 │   200   │ ❌ 429 quota exhausted toàn bộ key
-//   gemini-2.0-flash              │  15 │   200   │ ❌ 429 quota exhausted toàn bộ key
+// ⚠️ TRẠNG THÁI THỰC TẾ (nguồn: matrix test 2026-04-19):
+//   Model                         │ Key hoạt động          │ Ghi chú
+//   ──────────────────────────────┼────────────────────────┼──────────────────
+//   gemini-2.5-flash              │ April✅ June✅          │ ưu tiên 1 — RPD 10K/key
+//   gemini-2.5-flash-lite         │ March✅ (fallback)      │ ưu tiên 2 — RPD Unlimited
+//   gemini-3.1-flash-lite-preview │ hay 503/timeout        │ ưu tiên 3 — RPD 150K/key
+//   gemini-2.0-flash-lite         │ ❌ quota exhausted     │ backup cuối
+//   gemini-2.0-flash              │ ❌ quota exhausted     │ backup cuối
+//
+//   Key May (AIzaSyA1HBhRtj337...) bị PREPAID_DEPLETED — đã loại khỏi pool
+//   Thứ tự key pool hiện tại: April[0] → March[1] → June[2] → July[3]
 //
 // DB config (model_config table) sẽ override list này nếu đọc được.
-// Thứ tự ưu tiên: model đang hoạt động ổn định trước.
 const DEFAULT_MODEL_DEFS: Array<{ name: string; timeout: number; priority: string }> = [
-  // Thứ tự ưu tiên theo tình trạng thực tế (2026-04-19):
-  //   gemini-2.5-flash-lite: HOẠT ĐỘNG, 10 RPM, 20 RPD/key
-  //   gemini-3.1-flash-lite-preview: HOẠT ĐỘNG khi không 503, 500 RPD/key
-  //   gemini-2.5-flash: backup (quota gần hết)
-  //   gemini-2.0-*: cuối cùng (quota exhausted, có thể phục hồi ngày hôm sau)
-  { name: 'gemini-2.5-flash-lite',         timeout: 25000, priority: 'primary'  },
-  { name: 'gemini-3.1-flash-lite-preview', timeout: 25000, priority: 'fallback' },
-  { name: 'gemini-2.5-flash',              timeout: 25000, priority: 'backup'   },
+  { name: 'gemini-2.5-flash',              timeout: 25000, priority: 'primary'  },
+  { name: 'gemini-2.5-flash-lite',         timeout: 25000, priority: 'fallback' },
+  { name: 'gemini-3.1-flash-lite-preview', timeout: 25000, priority: 'backup'   },
   { name: 'gemini-2.0-flash-lite',         timeout: 25000, priority: 'backup'   },
   { name: 'gemini-2.0-flash',              timeout: 25000, priority: 'backup'   },
 ]
@@ -795,7 +792,12 @@ JSON có đúng 7 fields: risk_level, key_signals (array), short_term_forecast, 
       // ── Error classification ────────────────────────────────────────────
       const msg = outcome.message ?? ''
 
-      if (/429|quota|rate.?limit/i.test(msg)) {
+      if (/prepayment|credits.{0,20}depleted|depleted.{0,20}credits/i.test(msg)) {
+        // Prepaid credits hết hoàn toàn → key vô dụng vĩnh viễn, không phải chỉ hết RPD hôm nay
+        console.warn(`💳 [${modelConfig.name}][${keyName}] PREPAID_DEPLETED — invalidate key permanently`)
+        invalidKeys.add(keyIdx)
+
+      } else if (/429|quota|rate.?limit/i.test(msg)) {
         console.log(`🔒 [${modelConfig.name}][${keyName}] 429 quota exhausted — try next key`)
         exhaustedKeys.add(keyIdx)
 
