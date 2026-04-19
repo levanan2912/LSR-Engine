@@ -630,11 +630,12 @@ async function callGeminiModelSafely(
 // DB config (model_config table) sẽ override list này nếu đọc được.
 // Thứ tự ưu tiên: nhiều RPD nhất trước → ít nhất sau.
 const DEFAULT_MODEL_DEFS: Array<{ name: string; timeout: number; priority: string }> = [
-  { name: 'gemini-3.1-flash-lite-preview', timeout: 20000, priority: 'primary'  },
-  { name: 'gemini-2.0-flash-lite',         timeout: 20000, priority: 'fallback' },
-  { name: 'gemini-2.0-flash',              timeout: 20000, priority: 'backup'   },
-  { name: 'gemini-2.5-flash',              timeout: 20000, priority: 'backup'   },
-  { name: 'gemini-2.5-flash-lite',         timeout: 20000, priority: 'backup'   },
+  // timeout 25s mỗi model — phù hợp Paid Plan (overall 55s, có thể thử 2-3 models)
+  { name: 'gemini-3.1-flash-lite-preview', timeout: 25000, priority: 'primary'  },
+  { name: 'gemini-2.0-flash-lite',         timeout: 25000, priority: 'fallback' },
+  { name: 'gemini-2.0-flash',              timeout: 25000, priority: 'backup'   },
+  { name: 'gemini-2.5-flash',              timeout: 25000, priority: 'backup'   },
+  { name: 'gemini-2.5-flash-lite',         timeout: 25000, priority: 'backup'   },
 ]
 
 export async function analyzeStudyBehavior(
@@ -645,9 +646,11 @@ export async function analyzeStudyBehavior(
   db?:         D1Database,  // Cloudflare D1 — đọc model_config nếu có
 ): Promise<AnalysisResult> {
   const overallStart = Date.now()
-  // ── Overall timeout: Cloudflare Worker có giới hạn CPU 30s (free) / 30s wall-clock
-  // Set tổng thời gian tối đa = 25s để đảm bảo kịp trả response trước khi Worker bị kill
-  const OVERALL_TIMEOUT_MS = 25000
+  // ── Overall timeout: Workers Paid Plan — CPU 30s, wall-clock dài hơn nhiều
+  // Free:  25s overall (phải trả response trước khi Worker bị kill ở ~30s wall-clock)
+  // Paid:  55s overall — cho phép thử nhiều model/key hơn mà không bị timeout sớm
+  // Nguồn: https://developers.cloudflare.com/workers/platform/limits/
+  const OVERALL_TIMEOUT_MS = 55000
 
   // ── Parse key pool ────────────────────────────────────────────────────────
   const keyPool = parseApiKeys(apiKeysEnv, apiKeyEnv)
@@ -837,9 +840,17 @@ JSON có đúng 7 fields: risk_level, key_signals (array), short_term_forecast, 
         skipThisModel = true
 
       } else if (/TIMEOUT/i.test(msg)) {
-        // Timeout → skip model ngay (nếu key này timeout, key khác cùng model cũng chậm)
-        console.log(`⏰ [${modelConfig.name}][${keyName}] Timeout — skip model`)
-        skipThisModel = true
+        // Timeout của 1 key ≠ model bị quá tải toàn cục (503 mới là dấu hiệu đó).
+        // → Đánh dấu key này exhausted, thử key tiếp trong cùng model.
+        // Ngoại lệ: nếu overall time còn < 5s thì mới skip model để tránh chain quá dài.
+        const overallRemaining = OVERALL_TIMEOUT_MS - (Date.now() - overallStart)
+        if (overallRemaining < 5000) {
+          console.log(`⏰ [${modelConfig.name}][${keyName}] Timeout + overall sắp hết (${overallRemaining}ms) — skip model`)
+          skipThisModel = true
+        } else {
+          console.log(`⏰ [${modelConfig.name}][${keyName}] Timeout — thử key tiếp (overall còn ${overallRemaining}ms)`)
+          exhaustedKeys.add(keyIdx)  // đánh dấu exhausted, ưu tiên key fresh
+        }
 
       } else {
         // Parse/Validation/network error → thử key tiếp
