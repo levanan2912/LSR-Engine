@@ -623,9 +623,16 @@ async function callGeminiModelSafely(
 //   4. gemini-2.0-flash       — backup, quota cao (200 RPD)
 //   5. gemini-3.1-flash-lite-preview — cuối cùng, 500 RPD nhưng thường xuyên 503/overload
 // DB config (model_config table) sẽ override list này nếu đọc được.
+// ⚠️ QUOTA thực tế trên Free Tier (2025):
+//   gemini-2.5-flash      → ~500 RPD per key (ổn định nhất) ← ƯU TIÊN SỐ 1
+//   gemini-2.5-flash-lite → 20 RPD per key (hết rất nhanh)
+//   gemini-2.0-flash-lite → 200 RPD per key (nhưng thực tế thấp hơn)
+//   gemini-2.0-flash      → 200 RPD per key
+//   gemini-3.1-flash-lite-preview → 500 RPD nhưng thường xuyên 503/overload
+// Thứ tự này khớp với production DB (model_config table).
 const DEFAULT_MODEL_DEFS: Array<{ name: string; timeout: number; priority: string }> = [
-  { name: 'gemini-2.5-flash-lite',         timeout: 20000, priority: 'primary'  },
-  { name: 'gemini-2.5-flash',              timeout: 20000, priority: 'fallback' },
+  { name: 'gemini-2.5-flash',              timeout: 20000, priority: 'primary'  },
+  { name: 'gemini-2.5-flash-lite',         timeout: 20000, priority: 'fallback' },
   { name: 'gemini-2.0-flash-lite',         timeout: 20000, priority: 'backup'   },
   { name: 'gemini-2.0-flash',              timeout: 20000, priority: 'backup'   },
   { name: 'gemini-3.1-flash-lite-preview', timeout: 20000, priority: 'backup'   },
