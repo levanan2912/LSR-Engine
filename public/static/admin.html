@@ -1057,11 +1057,12 @@ function showReportDetail(id) {
 // ═══════════════════════════════════════════════════════════════════════════════
 const KEY_NAMES = ['March', 'April', 'May', 'June', 'July']
 const MODEL_LIMITS = {
-  'gemini-2.5-flash':              500,   // ~500 RPD free tier (xác nhận thực tế)
-  'gemini-2.5-flash-lite':          20,   // chỉ 20 RPD free tier (hết rất nhanh)
-  'gemini-2.0-flash-lite':         200,   // ~200 RPD free tier
-  'gemini-2.0-flash':              200,   // ~200 RPD free tier
-  'gemini-3.1-flash-lite-preview': 500,   // 500 RPD nhưng thường 503/overload
+  // Nguồn: Google AI Studio (2026-04) — Free Tier thực tế
+  'gemini-3.1-flash-lite-preview': 500,   // 500 RPD ← QUOTA CAO NHẤT
+  'gemini-2.0-flash-lite':         200,   // 200 RPD
+  'gemini-2.0-flash':              200,   // 200 RPD
+  'gemini-2.5-flash':               20,   // 20 RPD (thấp hơn dự kiến)
+  'gemini-2.5-flash-lite':          20,   // 20 RPD
 }
 const MODEL_LABELS = {
   'gemini-2.5-flash-lite': 'Gemini 2.5 Flash Lite',

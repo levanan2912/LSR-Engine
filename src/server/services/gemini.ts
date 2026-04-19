@@ -616,26 +616,23 @@ async function callGeminiModelSafely(
 //   formatAnalysisData   — nhận historyData thô, tự slice(0,7).reverse() → ASC bên trong
 
 // ── Default model pool (used as fallback when DB is unavailable) ──────────────
-// Thứ tự ưu tiên (khớp với migration 0010 seed & production DB):
-//   1. gemini-2.5-flash-lite  — nhanh, ít quota/ngày (20 RPD)
-//   2. gemini-2.5-flash       — ổn định, ít quota/ngày (20 RPD)
-//   3. gemini-2.0-flash-lite  — backup, quota cao (200 RPD)
-//   4. gemini-2.0-flash       — backup, quota cao (200 RPD)
-//   5. gemini-3.1-flash-lite-preview — cuối cùng, 500 RPD nhưng thường xuyên 503/overload
+// ⚠️ QUOTA THỰC TẾ Free Tier (nguồn: Google AI Studio, 2026-04):
+//   Model                         │ RPM │ RPD/key │ Ghi chú
+//   ──────────────────────────────┼─────┼─────────┼──────────────────────────
+//   gemini-3.1-flash-lite-preview │  15 │   500   │ ← QUOTA CAO NHẤT → ưu tiên 1
+//   gemini-2.0-flash-lite         │  30 │   200   │ backup ổn định
+//   gemini-2.0-flash              │  15 │   200   │ backup ổn định
+//   gemini-2.5-flash              │   5 │    20   │ quota thấp, dùng sau cùng
+//   gemini-2.5-flash-lite         │  10 │    20   │ quota thấp, last resort
+//
 // DB config (model_config table) sẽ override list này nếu đọc được.
-// ⚠️ QUOTA thực tế trên Free Tier (2025):
-//   gemini-2.5-flash      → ~500 RPD per key (ổn định nhất) ← ƯU TIÊN SỐ 1
-//   gemini-2.5-flash-lite → 20 RPD per key (hết rất nhanh)
-//   gemini-2.0-flash-lite → 200 RPD per key (nhưng thực tế thấp hơn)
-//   gemini-2.0-flash      → 200 RPD per key
-//   gemini-3.1-flash-lite-preview → 500 RPD nhưng thường xuyên 503/overload
-// Thứ tự này khớp với production DB (model_config table).
+// Thứ tự ưu tiên: nhiều RPD nhất trước → ít nhất sau.
 const DEFAULT_MODEL_DEFS: Array<{ name: string; timeout: number; priority: string }> = [
-  { name: 'gemini-2.5-flash',              timeout: 20000, priority: 'primary'  },
-  { name: 'gemini-2.5-flash-lite',         timeout: 20000, priority: 'fallback' },
-  { name: 'gemini-2.0-flash-lite',         timeout: 20000, priority: 'backup'   },
+  { name: 'gemini-3.1-flash-lite-preview', timeout: 20000, priority: 'primary'  },
+  { name: 'gemini-2.0-flash-lite',         timeout: 20000, priority: 'fallback' },
   { name: 'gemini-2.0-flash',              timeout: 20000, priority: 'backup'   },
-  { name: 'gemini-3.1-flash-lite-preview', timeout: 20000, priority: 'backup'   },
+  { name: 'gemini-2.5-flash',              timeout: 20000, priority: 'backup'   },
+  { name: 'gemini-2.5-flash-lite',         timeout: 20000, priority: 'backup'   },
 ]
 
 export async function analyzeStudyBehavior(
