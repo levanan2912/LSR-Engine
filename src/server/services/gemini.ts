@@ -385,9 +385,8 @@ export function parseGeminiResponse(responseText: string): Partial<AnalysisResul
 
 // ─── Key name labels (theo thứ tự trong pool) ───────────────────────────────────
 // Thứ tự KEY_NAMES phải khớp ĐÚNG với thứ tự key trong GEMINI_API_KEYS env:
-// [0]=March (nhiều token, ưu tiên 1), [1]=April (ưu tiên 2), [2]=July (quota thấp), [3]=Key5
-// May ❌ PREPAID_DEPLETED (đã xoá)
-// June = trùng April (đã xoá duplicate)
+// [0]=March, [1]=April, [2]=May, [3]=June, [4]=July — tất cả đều OK (2026-04-19)
+// Key cũ bị leak đã bị thay thế toàn bộ bằng key mới
 
 export const KEY_NAMES: string[] = ['March', 'April', 'May', 'June', 'July']
 
@@ -649,11 +648,10 @@ async function callGeminiModelSafely(
 // ⚠️ Luôn ưu tiên đọc từ DB (model_config table). List này chỉ dùng khi DB lỗi.
 // Thứ tự: thử nhiều model nhất, quota cao nhất → thấp nhất
 const DEFAULT_MODEL_DEFS: Array<{ name: string; timeout: number; priority: string }> = [
-  { name: 'gemini-2.5-flash',              timeout: 25000, priority: 'primary'  },
-  { name: 'gemini-2.5-flash-lite',         timeout: 25000, priority: 'fallback' },
-  { name: 'gemini-3.1-flash-lite-preview', timeout: 25000, priority: 'fallback'   },
-  { name: 'gemini-2.0-flash-lite',         timeout: 25000, priority: 'backup'   },
-  { name: 'gemini-2.0-flash',              timeout: 25000, priority: 'backup'   },
+  { name: 'gemini-2.5-flash',              timeout: 40000, priority: 'primary'  },
+  { name: 'gemini-2.5-flash-lite',         timeout: 35000, priority: 'fallback' },
+  { name: 'gemini-3.1-flash-lite-preview', timeout: 30000, priority: 'backup'   },
+  // gemini-2.0-flash-lite & gemini-2.0-flash: deprecated, removed
 ]
 
 export async function analyzeStudyBehavior(
