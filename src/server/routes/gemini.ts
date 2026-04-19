@@ -1,8 +1,9 @@
 import { Hono } from 'hono'
-import { ANALYTICAL_RULES } from '../services/gemini'
+import { ANALYTICAL_RULES, parseApiKeys } from '../services/gemini'
 
 type Bindings = {
   GEMINI_API_KEY: string
+  GEMINI_API_KEYS: string
 }
 
 const gemini = new Hono<{ Bindings: Bindings }>()
@@ -56,10 +57,14 @@ gemini.post('/ask-gemini', async (c) => {
     }
 
     // ── Model × Key loop (sequential, stop on first success) ──────────────────
+    // Thứ tự ưu tiên theo tình trạng thực tế (2026-04-19):
+    // gemini-2.5-flash-lite: HOẠT ĐỘNG ổn định
+    // gemini-3.1-flash-lite-preview: quota cao nhưng hay 503
+    // gemini-2.5-flash: backup
     const MODELS = [
-      { name: 'gemini-2.5-flash',              maxOutputTokens: 1024 },
+      { name: 'gemini-2.5-flash-lite',         maxOutputTokens: 1024 },
       { name: 'gemini-3.1-flash-lite-preview', maxOutputTokens: 1024 },
-      { name: 'gemini-2.0-flash',              maxOutputTokens: 1024 },
+      { name: 'gemini-2.5-flash',              maxOutputTokens: 1024 },
     ]
 
     let result  = ''
@@ -76,15 +81,22 @@ gemini.post('/ask-gemini', async (c) => {
 
         try {
           const url = `https://generativelanguage.googleapis.com/v1beta/models/${m.name}:generateContent?key=${key}`
+          // gemini-2.5-* cần thinkingConfig để tắt thinking mode (giảm latency)
+          // KHÔNG set responseMimeType khi dùng thinkingBudget:0 (incompatible)
+          const isGemini25 = /gemini-2\.5-/.test(m.name)
+          const genConfig: Record<string, unknown> = {
+            temperature:     0.1,
+            topK:            32,
+            topP:            0.8,
+            maxOutputTokens: m.maxOutputTokens,
+          }
+          if (isGemini25) {
+            genConfig.thinkingConfig = { thinkingBudget: 0 }
+          }
           const reqBody = {
             systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
             contents: [{ role: 'user', parts: [{ text: prompt }] }],
-            generationConfig: {
-              temperature:     0.1,
-              topK:            32,
-              topP:            0.8,
-              maxOutputTokens: m.maxOutputTokens,
-            },
+            generationConfig: genConfig,
             safetySettings: [
               { category: 'HARM_CATEGORY_HARASSMENT',        threshold: 'BLOCK_NONE' },
               { category: 'HARM_CATEGORY_HATE_SPEECH',       threshold: 'BLOCK_NONE' },
