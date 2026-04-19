@@ -222,6 +222,15 @@ export default function Dashboard({ user, authFetch, onLogout, onNavigate, curre
       let data: Record<string, unknown> = {}
       try { data = await res.json() } catch { /* body rỗng hoặc không phải JSON */ }
 
+      // DEBUG: log để chẩn đoán lỗi AI
+      console.log(`[LSR-DEBUG] POST /api/entries → HTTP ${res.status}`, {
+        success: data.success,
+        error: data.error,
+        ai_error: data.ai_error,
+        has_analysis: !!data.analysis,
+        message: String(data.message ?? '').slice(0, 120),
+      })
+
       // ── 409: hỏi user chọn hành động ─────────────────────────────────────
       if (res.status === 409 && (data.error === 'SESSION_EXISTS' || data.requires_action)) {
         setTodaySessions(data.today_sessions as TodaySession[])

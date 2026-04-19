@@ -557,18 +557,46 @@ async function callGeminiModelSafely(
       .trim()
 
     // ── VALIDATION 6: Parse JSON ───────────────────────────────────────────
-    let parsed: Record<string, unknown>
+    let rawParsed: Record<string, unknown>
     try {
-      parsed = JSON.parse(responseText)
+      rawParsed = JSON.parse(responseText)
     } catch {
       throw new Error(`PARSE_ERROR: ${responseText.substring(0, 150)}`)
     }
 
-    // ── VALIDATION 7: Đủ 7 fields bắt buộc ───────────────────────────────
+    // ── NORMALIZATION: Dùng normalizeGeminiFields để chuẩn hoá aliases ────
+    // Chạy TRƯỚC validation để handle các alias field và monitoring_protocol array→string
+    const parsed = { ...rawParsed, ...normalizeGeminiFields(rawParsed) } as Record<string, unknown>
+
+    // ── AUTO-FIX: monitoring_protocol array → string ───────────────────────
+    if (Array.isArray(parsed.monitoring_protocol)) {
+      parsed.monitoring_protocol = (parsed.monitoring_protocol as string[]).join(' ')
+    }
+
+    // ── AUTO-FIX: risk_level fuzzy match ──────────────────────────────────
+    // Model đôi khi trả tiếng Việt hoặc biến thể khác → map về 3 giá trị chuẩn
+    if (typeof parsed.risk_level === 'string') {
+      const rl = (parsed.risk_level as string).toLowerCase()
+      if (/high.?risk|rủi ro cao|nguy cơ cao|very.?high/i.test(rl)) {
+        parsed.risk_level = 'High Risk'
+      } else if (/fluctuat|dao động|biến động|trung bình|không ổn|moderate/i.test(rl)) {
+        parsed.risk_level = 'Fluctuating'
+      } else if (/stable|ổn định|thấp|low/i.test(rl)) {
+        parsed.risk_level = 'Stable'
+      }
+      // Ghi log nếu đã auto-fix
+      if (!['Stable', 'Fluctuating', 'High Risk'].includes(rawParsed.risk_level as string) &&
+           ['Stable', 'Fluctuating', 'High Risk'].includes(parsed.risk_level as string)) {
+        console.warn(`⚠️  [${modelName}] risk_level auto-fixed: "${rawParsed.risk_level}" → "${parsed.risk_level}"`)
+      }
+    }
+
+    // ── VALIDATION 7: Đủ fields cốt lõi (chỉ reject nếu thiếu hoàn toàn) ─
+    // Bỏ monitoring_protocol khỏi required vì có thể auto-generate
     const requiredFields = [
       'risk_level', 'key_signals', 'short_term_forecast',
       'primary_risk_driver', 'intervention_strategy',
-      'action_plan_48h', 'monitoring_protocol',
+      'action_plan_48h',
     ] as const
 
     const missingFields = requiredFields.filter(f =>
@@ -584,24 +612,30 @@ async function callGeminiModelSafely(
       throw new Error(`MISSING_FIELDS: ${missingFields.join(', ')}`)
     }
 
-    // ── VALIDATION 8: risk_level hợp lệ ──────────────────────────────────
+    // ── AUTO-FIX: monitoring_protocol fallback nếu vẫn thiếu ─────────────
+    if (!parsed.monitoring_protocol || (parsed.monitoring_protocol as string).length < 5) {
+      parsed.monitoring_protocol = 'Theo dõi mức tập trung và mức muốn bỏ cuộc trong phiên tiếp theo.'
+      console.warn(`⚠️  [${modelName}] monitoring_protocol thiếu — dùng fallback mặc định`)
+    }
+
+    // ── VALIDATION 8: risk_level hợp lệ (sau auto-fix) ───────────────────
     const validRiskLevels = ['Stable', 'Fluctuating', 'High Risk']
     if (!validRiskLevels.includes(parsed.risk_level as string)) {
       const latencyOnFail = Date.now() - callStart
       console.error(
         `🔍 [${modelName}] Validation thất bại (${latencyOnFail}ms)\n` +
-        `   risk_level không hợp lệ: "${parsed.risk_level}" (chỉ chấp nhận: Stable, Fluctuating, High Risk)\n` +
+        `   risk_level không hợp lệ: "${parsed.risk_level}" (không thể auto-fix)\n` +
         `   Raw response (150 ký tự đầu): ${responseText.substring(0, 150)}`,
       )
       throw new Error(`INVALID_RISK_LEVEL: "${parsed.risk_level}"`)
     }
 
     // ── VALIDATION 9: action_plan_48h là array có ít nhất 1 phần tử ──────
-    if (!Array.isArray(parsed.action_plan_48h) || parsed.action_plan_48h.length === 0) {
+    if (!Array.isArray(parsed.action_plan_48h) || (parsed.action_plan_48h as unknown[]).length === 0) {
       const latencyOnFail = Date.now() - callStart
       console.error(
         `🔍 [${modelName}] Validation thất bại (${latencyOnFail}ms)\n` +
-        `   action_plan_48h không hợp lệ: type=${typeof parsed.action_plan_48h}, length=${Array.isArray(parsed.action_plan_48h) ? (parsed.action_plan_48h as unknown[]).length : 'n/a'}\n` +
+        `   action_plan_48h không hợp lệ: type=${typeof parsed.action_plan_48h}\n` +
         `   Raw response (150 ký tự đầu): ${responseText.substring(0, 150)}`,
       )
       throw new Error(`INVALID_ACTION_PLAN: Expected array, got ${typeof parsed.action_plan_48h}`)
@@ -614,14 +648,7 @@ async function callGeminiModelSafely(
     const latency = Date.now() - callStart
     console.log(`✅ [${modelName}] Thành công - ${latency}ms`)
 
-    // Normalise field name aliases từ Gemini (đôi khi đổi tên)
-    const normalized = {
-      ...parsed,
-      key_signals:           parsed.key_signals           ?? parsed.key_signals_detected,
-      intervention_strategy: parsed.intervention_strategy ?? parsed.recommended_intervention_strategy,
-    } as AnalysisResult
-
-    return { success: true, data: normalized, latency }
+    return { success: true, data: parsed as unknown as AnalysisResult, latency }
 
   } catch (err: unknown) {
     clearTimeout(timer)
