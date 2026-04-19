@@ -618,26 +618,26 @@ async function callGeminiModelSafely(
 //   formatAnalysisData   — nhận historyData thô, tự slice(0,7).reverse() → ASC bên trong
 
 // ── Default model pool (used as fallback when DB is unavailable) ──────────────
-// ⚠️ QUOTA THỰC TẾ Free Tier (nguồn: Google AI Studio, 2026-04):
-//   Model                         │ RPM │ RPD/key │ Ghi chú
+// ⚠️ TRẠNG THÁI THỰC TẾ (nguồn: test trực tiếp 2026-04-19):
+//   Model                         │ RPM │ RPD/key │ Trạng thái
 //   ──────────────────────────────┼─────┼─────────┼──────────────────────────
-//   gemini-3.1-flash-lite-preview │  15 │   500   │ ← QUOTA CAO NHẤT → ưu tiên 1
-//   gemini-2.0-flash-lite         │  30 │   200   │ backup ổn định
-//   gemini-2.0-flash              │  15 │   200   │ backup ổn định
-//   gemini-2.5-flash              │   5 │    20   │ quota thấp, dùng sau cùng
-//   gemini-2.5-flash-lite         │  10 │    20   │ quota thấp, last resort
+//   gemini-2.5-flash-lite         │  10 │    20   │ ✅ HOẠT ĐỘNG — ưu tiên 1
+//   gemini-3.1-flash-lite-preview │  15 │   500   │ ✅ HOẠT ĐỘNG — ưu tiên 2 (nhưng hay 503)
+//   gemini-2.5-flash              │   5 │    20   │ ⚠️ quota 5 key đã gần hết hôm nay
+//   gemini-2.0-flash-lite         │  30 │   200   │ ❌ 429 quota exhausted toàn bộ key
+//   gemini-2.0-flash              │  15 │   200   │ ❌ 429 quota exhausted toàn bộ key
 //
 // DB config (model_config table) sẽ override list này nếu đọc được.
-// Thứ tự ưu tiên: nhiều RPD nhất trước → ít nhất sau.
+// Thứ tự ưu tiên: model đang hoạt động ổn định trước.
 const DEFAULT_MODEL_DEFS: Array<{ name: string; timeout: number; priority: string }> = [
-  // Thứ tự ưu tiên theo tình trạng thực tế (2026-04):
-  //   gemini-2.5-flash: 5 RPM, 20 RPD/key — hoạt động ổn định
-  //   gemini-2.5-flash-lite: 10 RPM, 20 RPD/key — fallback
-  //   gemini-3.1-flash-lite-preview: 500 RPD nhưng thường 503 overload
-  //   gemini-2.0-flash-lite / gemini-2.0-flash: 200 RPD nhưng hay 429 hết quota
-  { name: 'gemini-2.5-flash',              timeout: 25000, priority: 'primary'  },
-  { name: 'gemini-2.5-flash-lite',         timeout: 25000, priority: 'fallback' },
-  { name: 'gemini-3.1-flash-lite-preview', timeout: 25000, priority: 'backup'   },
+  // Thứ tự ưu tiên theo tình trạng thực tế (2026-04-19):
+  //   gemini-2.5-flash-lite: HOẠT ĐỘNG, 10 RPM, 20 RPD/key
+  //   gemini-3.1-flash-lite-preview: HOẠT ĐỘNG khi không 503, 500 RPD/key
+  //   gemini-2.5-flash: backup (quota gần hết)
+  //   gemini-2.0-*: cuối cùng (quota exhausted, có thể phục hồi ngày hôm sau)
+  { name: 'gemini-2.5-flash-lite',         timeout: 25000, priority: 'primary'  },
+  { name: 'gemini-3.1-flash-lite-preview', timeout: 25000, priority: 'fallback' },
+  { name: 'gemini-2.5-flash',              timeout: 25000, priority: 'backup'   },
   { name: 'gemini-2.0-flash-lite',         timeout: 25000, priority: 'backup'   },
   { name: 'gemini-2.0-flash',              timeout: 25000, priority: 'backup'   },
 ]
