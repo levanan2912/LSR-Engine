@@ -498,14 +498,14 @@ export default function Dashboard({ user, authFetch, onLogout, onNavigate, curre
           </div>
 
           {/* Chart — compact strip pinned to the bottom of left column */}
-          <div style={{ flexShrink: 0, padding: '8px 10px 10px' }}>
+          <div style={{ flexShrink: 0, padding: '4px 10px 8px' }}>
             <div style={{
               background: 'var(--bg-card-strong, rgba(255,255,255,0.02))',
               border: '1px solid var(--border-card, rgba(255,255,255,0.05))',
-              borderRadius: '12px', padding: '8px 12px',
+              borderRadius: '12px', padding: '5px 12px 6px',
               boxShadow: 'var(--card-shadow)',
             }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                   <span style={{ fontSize: '11px' }}>📈</span>
                   <span style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: '9px', fontWeight: 700, color: 'var(--trend-title)', textTransform: 'uppercase', letterSpacing: '0.8px' }}>Xu hướng</span>

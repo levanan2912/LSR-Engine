@@ -34,7 +34,7 @@ export default function TrendChart({ entries, compact }: Props) {
     'Bỏ cuộc':  e.dropout_feeling,
   }))
 
-  const chartH = compact ? 130 : 220
+  const chartH = compact ? 80 : 220
 
   if (!data.length) return (
     <div style={{ height: `${chartH}px`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: '8px' }}>
