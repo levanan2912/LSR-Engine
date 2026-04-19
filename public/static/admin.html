@@ -1057,11 +1057,11 @@ function showReportDetail(id) {
 // ═══════════════════════════════════════════════════════════════════════════════
 const KEY_NAMES = ['March', 'April', 'May', 'June', 'July']
 const MODEL_LIMITS = {
-  'gemini-2.5-flash-lite': 20,
-  'gemini-3.1-flash-lite-preview': 500,
-  'gemini-2.5-flash': 20,
-  'gemini-2.0-flash-lite': 200,
-  'gemini-2.0-flash': 200,
+  'gemini-2.5-flash':              500,   // ~500 RPD free tier (xác nhận thực tế)
+  'gemini-2.5-flash-lite':          20,   // chỉ 20 RPD free tier (hết rất nhanh)
+  'gemini-2.0-flash-lite':         200,   // ~200 RPD free tier
+  'gemini-2.0-flash':              200,   // ~200 RPD free tier
+  'gemini-3.1-flash-lite-preview': 500,   // 500 RPD nhưng thường 503/overload
 }
 const MODEL_LABELS = {
   'gemini-2.5-flash-lite': 'Gemini 2.5 Flash Lite',
@@ -1125,10 +1125,11 @@ async function loadApiKeys() {
       ? cfgModels.map(m => m.model_name)
       : Object.keys(MODEL_LABELS)
 
-    // Collect all keys that appear in stats
+    // Luôn hiển thị đủ 5 key columns (KEY_NAMES), thêm key lạ nếu có
     const keySet = new Set()
     Object.values(stats).forEach(byKey => Object.keys(byKey).forEach(k => keySet.add(k)))
-    const allKeys = [...KEY_NAMES.filter(k => keySet.has(k)), ...[...keySet].filter(k => !KEY_NAMES.includes(k))]
+    // KEY_NAMES luôn xuất hiện, key ngoài danh sách thêm vào cuối
+    const allKeys = [...KEY_NAMES, ...[...keySet].filter(k => !KEY_NAMES.includes(k))]
 
     // Build per-model limit map from DB config
     const dbLimits = {}
@@ -1140,9 +1141,13 @@ async function loadApiKeys() {
     const getLbl   = m => dbLabels[m] || MODEL_LABELS[m] || m
     const getLimit = m => dbLimits[m] != null ? dbLimits[m] : (MODEL_LIMITS[m] != null ? MODEL_LIMITS[m] : null)
 
+    // Tính tổng usage hôm nay để quyết định hiển thị hay empty state
+    const totalUsageToday = Object.values(stats).reduce((s, byKey) =>
+      s + Object.values(byKey).reduce((a, b) => a + b, 0), 0)
+
     let html = `<div style="font-size:12px;color:var(--muted);margin-bottom:16px">📅 Số lượt sử dụng hôm nay: <strong style="color:var(--text)">${today}</strong> &nbsp;·&nbsp; Làm mới theo ngày lúc 00:00 GMT+7</div>`
 
-    if (!allKeys.length && !Object.keys(stats).length) {
+    if (!orderedModels.length) {
       html += `<div class="section"><div class="section-body" style="text-align:center;padding:32px;color:var(--muted)">Chưa có dữ liệu sử dụng hôm nay</div></div>`
     } else {
       html += `
