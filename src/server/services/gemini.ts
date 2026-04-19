@@ -748,13 +748,28 @@ JSON có đúng 7 fields: risk_level, key_signals (array), short_term_forecast, 
 
     console.log(`🔄 [${modelConfig.name}] Bắt đầu — timeout=${effectiveTimeout}ms (overall còn ${remainingMs}ms), keys=[${keyOrder.map(i => getKeyName(i)).join(',')}]`)
 
-    // ── Sequential: thử từng key theo thứ tự ────────────────────────────────
+    // ── Sequential: thử từng key theo thứ tự, tối đa MAX_KEYS_PER_MODEL ────────
+    // QUAN TRỌNG về RPM (Requests Per Minute):
+    //   - 429 = "per-minute" rate limit, KHÔNG phải per-day.
+    //   - Mỗi key có RPM quota độc lập → thử key khác khi 1 key bị 429 vẫn hữu ích.
+    //   - NHƯNG thử quá nhiều keys liên tiếp (5 keys × 5 models = 25 calls) sẽ burn
+    //     hết RPM của toàn bộ pool trong vài giây.
+    //   - Giới hạn: thử tối đa 2 keys mỗi model. Nếu cả 2 đều 429 → chuyển model.
+    //     Model tiếp theo có RPM pool riêng, có thể thành công.
+    const MAX_KEYS_PER_MODEL = 2
+    let keysTriedThisModel   = 0
+
     for (const keyIdx of keyOrder) {
+      if (keysTriedThisModel >= MAX_KEYS_PER_MODEL) {
+        console.log(`🔒 [${modelConfig.name}] Đã thử ${MAX_KEYS_PER_MODEL} keys — chuyển model để giữ quota`)
+        break
+      }
       if (skipThisModel) break
 
       const key     = keyPool[keyIdx]
       const keyName = getKeyName(keyIdx)
-      console.log(`⏳ [${modelConfig.name}][${keyName}] Đang gọi...`)
+      keysTriedThisModel++
+      console.log(`⏳ [${modelConfig.name}][${keyName}] Đang gọi... (key ${keysTriedThisModel}/${MAX_KEYS_PER_MODEL})`)
 
       const outcome = await callGeminiModelSafely(
         modelConfig.name,
