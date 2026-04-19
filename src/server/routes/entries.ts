@@ -268,9 +268,9 @@ entries.post('/', async (c) => {
       session_time:        currentTime,
     }
 
-    // ── Gọi Gemini AI — phiên học luôn được ghi nhận dù AI có thất bại ─────────
-    // Chính sách: lưu phiên học trước, phân tích AI sau.
-    // Khi AI fail → pending_analysis:true, user có thể retry phân tích sau.
+    // ── Gọi Gemini AI ─────────────────────────────────────────────────────────
+    // Chính sách: lưu phiên học TRƯỚC, gọi AI NGAY SAU.
+    // Nếu AI fail → trả về lỗi rõ ràng (không có pending/retry).
     let analysis: Awaited<ReturnType<typeof analyzeStudyBehavior>> | null = null
     let aiError: string | null = null
 
@@ -286,61 +286,59 @@ entries.post('/', async (c) => {
       const msg = analysisErr instanceof Error ? analysisErr.message : String(analysisErr)
       console.error(`[StudySignal] AI thất bại cho entry ${entryId}:`, msg)
       aiError = msg
-      // Không rollback — phiên học đã được ghi nhận, chờ retry phân tích sau
     }
 
     // ── AI thành công: lưu kết quả vào DB ────────────────────────────────────
     if (analysis) {
-    await c.env.DB.prepare(`
-      INSERT OR REPLACE INTO analysis_reports
-        (user_id, entry_id, report_date, risk_level, key_signals, short_term_forecast,
-         primary_risk_driver, intervention_strategy, action_plan_48h,
-         monitoring_protocol, raw_ai_response, analyzed_by, key_name)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).bind(
-      userId, entryId, date,
-      analysis.risk_level,
-      JSON.stringify(analysis.key_signals),
-      analysis.short_term_forecast,
-      analysis.primary_risk_driver,
-      analysis.intervention_strategy,
-      JSON.stringify(analysis.action_plan_48h),
-      analysis.monitoring_protocol,
-      analysis.raw_ai_response || '',
-      analysis.analyzed_by || null,
-      analysis.key_name || null,
-    ).run()
+      await c.env.DB.prepare(`
+        INSERT OR REPLACE INTO analysis_reports
+          (user_id, entry_id, report_date, risk_level, key_signals, short_term_forecast,
+           primary_risk_driver, intervention_strategy, action_plan_48h,
+           monitoring_protocol, raw_ai_response, analyzed_by, key_name)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        userId, entryId, date,
+        analysis.risk_level,
+        JSON.stringify(analysis.key_signals),
+        analysis.short_term_forecast,
+        analysis.primary_risk_driver,
+        analysis.intervention_strategy,
+        JSON.stringify(analysis.action_plan_48h),
+        analysis.monitoring_protocol,
+        analysis.raw_ai_response || '',
+        analysis.analyzed_by || null,
+        analysis.key_name || null,
+      ).run()
 
-    console.log(`✅ Saved session ${savedSessionNumber} + AI report via ${analysis.analyzed_by}`)
+      console.log(`✅ Saved session ${savedSessionNumber} + AI report via ${analysis.analyzed_by}`)
 
-    return c.json({
-      success:          true,
-      entry_id:         entryId,
-      session_number:   savedSessionNumber,
-      session_time:     currentTime,
-      action:           wasUpdated ? 'update' : 'add_new',
-      was_updated:      wasUpdated,
-      pending_analysis: false,
-      analysis,
-      message: `Đã lưu phiên ${savedSessionNumber} và phân tích AI thành công.`,
-    }, 201)
+      return c.json({
+        success:        true,
+        entry_id:       entryId,
+        session_number: savedSessionNumber,
+        session_time:   currentTime,
+        action:         wasUpdated ? 'update' : 'add_new',
+        was_updated:    wasUpdated,
+        analysis,
+        message: `Đã lưu phiên ${savedSessionNumber} và phân tích AI thành công.`,
+      }, 201)
     }
 
-    // ── AI thất bại: phiên đã lưu, chờ retry phân tích ───────────────────────
-    console.log(`📌 Session ${savedSessionNumber} (entry ${entryId}) saved without AI report — pending analysis`)
+    // ── AI thất bại: phiên đã lưu nhưng không có kết quả AI ─────────────────
+    console.log(`⚠️ Session ${savedSessionNumber} (entry ${entryId}) saved — AI thất bại`)
 
     return c.json({
-      success:          true,
-      entry_id:         entryId,
-      session_number:   savedSessionNumber,
-      session_time:     currentTime,
-      action:           wasUpdated ? 'update' : 'add_new',
-      was_updated:      wasUpdated,
-      pending_analysis: true,
-      analysis:         null,
-      message:          `Đã lưu phiên ${savedSessionNumber}. Phân tích AI tạm thời không khả dụng — có thể thử lại sau.`,
-      ai_error:         aiError,
-    }, 201)
+      success:        false,
+      entry_id:       entryId,
+      session_number: savedSessionNumber,
+      session_time:   currentTime,
+      action:         wasUpdated ? 'update' : 'add_new',
+      was_updated:    wasUpdated,
+      analysis:       null,
+      error:          'ai_failed',
+      message:        `Đã lưu phiên ${savedSessionNumber} nhưng phân tích AI thất bại. Vui lòng thử lại sau.`,
+      ai_error:       aiError,
+    }, 207)
 
   } catch (err: unknown) {
     console.error('❌ POST /api/entries error:', err)
@@ -351,148 +349,19 @@ entries.post('/', async (c) => {
   }
 })
 
-// ─── POST /api/entries/:id/analysis ──────────────────────────────────────────
-// Retry AI analysis cho một entry đã lưu nhưng chưa có report.
-// Idempotent: nếu report đã tồn tại, trả về report hiện có.
+// ─── POST /api/entries/:id/analysis (DISABLED) ───────────────────────────────
+// Tính năng retry analysis đã bị xóa theo yêu cầu.
+// AI phân tích ngay lúc POST /api/entries — không có retry sau.
 
 entries.post('/:id/analysis', async (c) => {
-  try {
-    const userId  = c.get('userId')
-    const entryId = parseInt(c.req.param('id'), 10)
-
-    if (isNaN(entryId) || entryId <= 0) {
-      return c.json({ error: 'Invalid entry ID' }, 400)
-    }
-
-    // ── Kiểm tra entry thuộc về user ─────────────────────────────────────────
-    const entry = await c.env.DB.prepare(`
-      SELECT id, session_date, session_number, session_time,
-             study_hours, focus_level, distraction_count,
-             distracting_factors, goal_achieved, emotional_state, dropout_feeling
-      FROM daily_entries
-      WHERE id = ? AND user_id = ?
-    `).bind(entryId, userId).first<{
-      id: number; session_date: string; session_number: number; session_time: string | null
-      study_hours: number; focus_level: number; distraction_count: number
-      distracting_factors: string | null; goal_achieved: number; emotional_state: string | null
-      dropout_feeling: number
-    }>()
-
-    if (!entry) {
-      return c.json({ error: 'Entry not found or access denied' }, 404)
-    }
-
-    // ── Idempotent: trả về report có sẵn ─────────────────────────────────────
-    const existing = await c.env.DB.prepare(
-      'SELECT * FROM analysis_reports WHERE entry_id = ? AND user_id = ? LIMIT 1'
-    ).bind(entryId, userId).first()
-
-    if (existing) {
-      console.log(`ℹ️ Analysis already exists for entry ${entryId}, returning cached`)
-      return c.json({ success: true, analysis: existing, cached: true }, 200)
-    }
-
-    // ── Lấy lịch sử để làm context (tối đa 5 phiên trước entry này) ──────────
-    const previousSessions = await c.env.DB.prepare(`
-      SELECT session_date, session_number, study_hours, focus_level,
-             distraction_count, distracting_factors, goal_achieved,
-             emotional_state, dropout_feeling
-      FROM daily_entries
-      WHERE user_id = ? AND id < ?
-      ORDER BY session_date DESC, session_number DESC
-      LIMIT 5
-    `).bind(userId, entryId).all()
-
-    const todayEntry = {
-      study_hours:         entry.study_hours,
-      focus_level:         entry.focus_level,
-      distraction_count:   entry.distraction_count,
-      distracting_factors: entry.distracting_factors ?? undefined,
-      goal_achieved:       entry.goal_achieved === 1,
-      emotional_state:     entry.emotional_state ?? undefined,
-      dropout_feeling:     entry.dropout_feeling,
-      session_date:        entry.session_date,
-      session_number:      entry.session_number,
-      session_time:        entry.session_time ?? undefined,
-    }
-
-    // ── Gọi AI ────────────────────────────────────────────────────────────────
-    let analysis
-    try {
-      analysis = await analyzeStudyBehavior(
-        todayEntry,
-        previousSessions.results as Record<string, unknown>[],
-        c.env.GEMINI_API_KEYS || c.env.GEMINI_API_KEY || '',
-        c.env.GEMINI_API_KEY || '',
-        c.env.DB,
-      )
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      console.error(`[StudySignal] Retry AI thất bại cho entry ${entryId}:`, msg)
-      return c.json(
-        { error: 'ai_unavailable', message: 'Dịch vụ AI tạm thời không khả dụng. Thử lại sau ít phút.' },
-        503,
-      )
-    }
-
-    // ── Lưu report ───────────────────────────────────────────────────────────
-    await c.env.DB.prepare(`
-      INSERT OR REPLACE INTO analysis_reports
-        (user_id, entry_id, report_date, risk_level, key_signals, short_term_forecast,
-         primary_risk_driver, intervention_strategy, action_plan_48h,
-         monitoring_protocol, raw_ai_response, analyzed_by, key_name)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).bind(
-      userId, entryId, entry.session_date,
-      analysis.risk_level,
-      JSON.stringify(analysis.key_signals),
-      analysis.short_term_forecast,
-      analysis.primary_risk_driver,
-      analysis.intervention_strategy,
-      JSON.stringify(analysis.action_plan_48h),
-      analysis.monitoring_protocol,
-      analysis.raw_ai_response || '',
-      analysis.analyzed_by || null,
-      analysis.key_name || null,
-    ).run()
-
-    console.log(`✅ Retry analysis saved for entry ${entryId} via ${analysis.analyzed_by}`)
-
-    return c.json({ success: true, analysis, cached: false }, 201)
-
-  } catch (err: unknown) {
-    console.error('❌ POST /api/entries/:id/analysis error:', err)
-    return c.json({ error: 'Server error', message: err instanceof Error ? err.message : 'Unknown error' }, 500)
-  }
+  return c.json({ error: 'Tính năng retry analysis không còn hỗ trợ. Vui lòng tạo phiên học mới.' }, 410)
 })
 
-// ─── GET /api/entries/pending ─────────────────────────────────────────────────
-// Trả về entry mới nhất của user chưa có analysis report (nếu có).
-// Dùng để tự động phát hiện phiên chưa phân tích khi load dashboard.
+// ─── GET /api/entries/pending (DISABLED) ─────────────────────────────────────
+// Tính năng pending đã bị xóa theo yêu cầu.
 
 entries.get('/pending', async (c) => {
-  try {
-    const userId = c.get('userId')
-
-    const pending = await c.env.DB.prepare(`
-      SELECT de.id, de.session_date, de.session_number, de.session_time,
-             de.study_hours, de.focus_level, de.dropout_feeling, de.created_at
-      FROM daily_entries de
-      LEFT JOIN analysis_reports ar ON ar.entry_id = de.id AND ar.user_id = de.user_id
-      WHERE de.user_id = ? AND ar.id IS NULL
-      ORDER BY de.session_date DESC, de.session_number DESC
-      LIMIT 1
-    `).bind(userId).first<{
-      id: number; session_date: string; session_number: number
-      session_time: string | null; study_hours: number
-      focus_level: number; dropout_feeling: number; created_at: string
-    }>()
-
-    return c.json({ pending: pending ?? null })
-  } catch (err: unknown) {
-    console.error('Get pending entry error:', err)
-    return c.json({ error: 'Failed to check pending entries' }, 500)
-  }
+  return c.json({ pending: null })
 })
 
 // ─── GET /api/entries ─────────────────────────────────────────────────────────

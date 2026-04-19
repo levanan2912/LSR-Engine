@@ -68,7 +68,7 @@ function AIStatusBar({ status }: { status: AIStatus }) {
 type StatusType = 'idle' | 'loading' | 'success' | 'error' | 'warning'
 interface SubmitStatus { type: StatusType; message: string }
 
-function StatusBanner({ status, onRetry }: { status: SubmitStatus; onRetry?: () => void }) {
+function StatusBanner({ status }: { status: SubmitStatus }) {
   if (status.type === 'idle' || !status.message) return null
   const s = {
     loading: { bg: 'rgba(99,102,241,0.1)', border: 'rgba(99,102,241,0.3)', color: '#a5b4fc' },
@@ -81,19 +81,6 @@ function StatusBanner({ status, onRetry }: { status: SubmitStatus; onRetry?: () 
     <div style={{ marginTop: '12px', padding: '10px 14px', borderRadius: '10px', fontSize: '12px', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '8px', background: s.bg, border: `1px solid ${s.border}`, color: s.color, flexWrap: 'wrap' }}>
       {status.type === 'loading' && <div style={{ width: '12px', height: '12px', borderRadius: '50%', flexShrink: 0, border: '2px solid rgba(99,102,241,0.3)', borderTopColor: '#818cf8', animation: 'spin 0.8s linear infinite' }} />}
       <span style={{ flex: 1 }}>{status.message}</span>
-      {status.type === 'warning' && onRetry && (
-        <button
-          type="button"
-          onClick={onRetry}
-          style={{
-            marginLeft: '8px', padding: '3px 10px', borderRadius: '6px', fontSize: '11px',
-            fontWeight: 600, cursor: 'pointer', border: '1px solid rgba(245,158,11,0.5)',
-            background: 'rgba(245,158,11,0.15)', color: '#fcd34d', whiteSpace: 'nowrap',
-          }}
-        >
-          ↺ Thử lại phân tích
-        </button>
-      )}
     </div>
   )
 }
@@ -180,7 +167,7 @@ export default function Dashboard({ user, authFetch, onLogout, onNavigate, curre
   const toast        = useToast()
 
   // ── state: entry đã lưu nhưng chưa có report ───────────────────────────────
-  const [pendingEntryId, setPendingEntryId] = useState<number | null>(null)
+  // pendingEntryId removed — retry analysis feature disabled
 
   const loadData = useCallback(async () => {
     try {
@@ -192,28 +179,7 @@ export default function Dashboard({ user, authFetch, onLogout, onNavigate, curre
 
   useEffect(() => { loadData() }, [loadData])
 
-  // ── Tự động phát hiện pending entry khi load dashboard ───────────────────────
-  // (chỉ cần cho các phiên cũ lưu trước khi áp dụng chính sách rollback)
-  useEffect(() => {
-    const checkPending = async () => {
-      try {
-        const res = await authFetch('/api/entries/pending')
-        if (!res.ok) return
-        const { pending } = await res.json()
-        if (pending?.id) {
-          console.log(`📌 Phát hiện phiên cũ chưa phân tích: entry ${pending.id} (phiên ${pending.session_number})`)
-          setPendingEntryId(pending.id)
-          showStatus('warning',
-            `⚠️ Phiên ${pending.session_number} (${pending.session_date}) chưa có kết quả AI — Nhấn "Thử lại phân tích" để phân tích.`,
-            0,
-          )
-        }
-      } catch { /* ignore */ }
-    }
-    const t = setTimeout(checkPending, 1200)
-    return () => clearTimeout(t)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  // Pending check removed — retry analysis feature disabled
 
   const showStatus = useCallback((type: StatusType, message: string, autoMs?: number) => {
     if (statusTimer.current) clearTimeout(statusTimer.current)
@@ -296,18 +262,17 @@ export default function Dashboard({ user, authFetch, onLogout, onNavigate, curre
         return
       }
 
-      // ── Phiên đã lưu nhưng AI thất bại (pending_analysis:true) ───────────
-      if (data.pending_analysis === true) {
+      // ── AI thất bại (HTTP 207 hoặc success:false) ────────────────────────
+      if (res.status === 207 || data.success === false) {
         const sessionNumber = data.session_number as number
-        const entryId       = data.entry_id as number
         setTodaySessions(null); pendingData.current = null
         formRef.current?.reset()
-        setPendingEntryId(entryId)
-        showStatus('warning',
-          `⚠️ Đã lưu phiên ${sessionNumber} — phân tích AI chưa thành công. Nhấn "Thử lại phân tích" để thử lại.`,
-          0,
+        const aiErr = String(data.ai_error || data.message || 'AI không khả dụng')
+        showStatus('error',
+          `❌ Đã lưu phiên ${sessionNumber} nhưng AI thất bại: ${aiErr.slice(0, 120)}`,
+          12000,
         )
-        toast.warning(`Phiên ${sessionNumber} đã lưu`, 'Kết quả phân tích AI chưa có. Có thể thử lại sau.')
+        toast.error(`Phân tích AI thất bại`, 'Phiên học đã lưu. Thử lại bằng cách nhập phiên mới.')
         setAiStatus({ phase: 'ready' }); setAnalyzing(false)
         await loadData()
         return
@@ -324,7 +289,6 @@ export default function Dashboard({ user, authFetch, onLogout, onNavigate, curre
 
       // ── Thành công: entry + AI report đã lưu ─────────────────────────────
       setTodaySessions(null); pendingData.current = null
-      setPendingEntryId(null)
       formRef.current?.reset()
 
       const a = data.analysis as Record<string, unknown> | undefined
@@ -387,62 +351,7 @@ export default function Dashboard({ user, authFetch, onLogout, onNavigate, curre
   const handleUpdate = () => { const d = pendingData.current; setTodaySessions(null); if (d) submitEntry(d, 'update') }
   const handleKeep   = () => { const d = pendingData.current; setTodaySessions(null); pendingData.current = null; if (d) submitEntry(d, 'keep') }
 
-  // ── Retry phân tích cho pending entry ────────────────────────────────────────
-  const handleRetryAnalysis = useCallback(async () => {
-    if (!pendingEntryId) return
-    setAnalyzing(true); setAiStatus({ phase: 'analyzing' })
-    showStatus('loading', '⏳ Đang thử lại phân tích AI...')
-    try {
-      const res = await authFetch(`/api/entries/${pendingEntryId}/analysis`, { method: 'POST' })
-      let data: Record<string, unknown> = {}
-      try { data = await res.json() } catch { /* ignore */ }
-
-      if (!res.ok) {
-        const errMsg = String(data.message || data.error || 'AI không khả dụng')
-        showStatus('error', `❌ ${errMsg}. Phiên học vẫn đã được lưu.`, 10000)
-        toast.error('Phân tích thất bại', 'Phiên học đã lưu. Thử lại sau khi mạng ổn định hơn.')
-        setAiStatus({ phase: 'ready' }); setAnalyzing(false)
-        return
-      }
-
-      const a = (data.analysis || data) as Record<string, unknown>
-      if (a?.risk_level) {
-        setReport({
-          id:         pendingEntryId,
-          user_id:    user.id,
-          entry_id:   pendingEntryId,
-          report_date: new Date(Date.now() + 7 * 3600000).toISOString().split('T')[0],
-          created_at:  new Date(Date.now() + 7 * 3600000).toISOString(),
-          risk_level:            String(a.risk_level            || 'Fluctuating'),
-          key_signals:           Array.isArray(a.key_signals)     ? a.key_signals as string[]     : [],
-          action_plan_48h:       Array.isArray(a.action_plan_48h) ? a.action_plan_48h as string[] : [],
-          short_term_forecast:   String(a.short_term_forecast   || ''),
-          primary_risk_driver:   String(a.primary_risk_driver   || ''),
-          intervention_strategy: String(a.intervention_strategy || ''),
-          monitoring_protocol:   String(a.monitoring_protocol   || ''),
-          raw_ai_response:       (a.raw_ai_response as string)   ?? null,
-          analyzed_by:           (a.analyzed_by as string)       ?? null,
-          key_name:              (a.key_name as string)           ?? null,
-        })
-        setAiStatus({
-          phase:     'done',
-          modelName: a.analyzed_by as string ?? undefined,
-          keyName:   a.key_name   as string ?? undefined,
-          latencyMs: typeof a.latency === 'number' ? a.latency : undefined,
-        })
-      }
-      setPendingEntryId(null)
-      showStatus('success', '✅ Phân tích AI hoàn thành!', 5000)
-      toast.success('Phân tích thành công', 'Đã có kết quả AI cho phiên học.')
-      setAnalyzing(false)
-      await loadData()
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Lỗi không xác định'
-      showStatus('error', `❌ ${msg}. Phiên học vẫn đã được lưu.`, 10000)
-      toast.error('Lỗi', msg)
-      setAiStatus({ phase: 'ready' }); setAnalyzing(false)
-    }
-  }, [pendingEntryId, authFetch, showStatus, toast, loadData, user.id])
+  // handleRetryAnalysis removed — retry analysis feature disabled
 
   const displayName = user.full_name || user.email.split('@')[0]
 
@@ -584,10 +493,7 @@ export default function Dashboard({ user, authFetch, onLogout, onNavigate, curre
                 right={<AIStatusBar status={aiStatus} />}
               />
               <EntryForm ref={formRef} onSubmit={d => submitEntry(d)} loading={submitting} />
-              <StatusBanner
-                status={submitStatus}
-                onRetry={pendingEntryId && !analyzing ? handleRetryAnalysis : undefined}
-              />
+              <StatusBanner status={submitStatus} />
             </div>
           </div>
 
