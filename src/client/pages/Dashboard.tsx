@@ -71,16 +71,16 @@ interface SubmitStatus { type: StatusType; message: string }
 function StatusBanner({ status }: { status: SubmitStatus }) {
   if (status.type === 'idle' || !status.message) return null
   const s = {
-    loading: { bg: 'rgba(99,102,241,0.1)', border: 'rgba(99,102,241,0.3)', color: '#a5b4fc' },
-    success: { bg: 'rgba(52,211,153,0.1)', border: 'rgba(52,211,153,0.3)', color: '#6ee7b7' },
-    error:   { bg: 'rgba(248,113,113,0.1)', border: 'rgba(248,113,113,0.3)', color: '#fca5a5' },
-    warning: { bg: 'rgba(245,158,11,0.1)',  border: 'rgba(245,158,11,0.3)',  color: '#fcd34d' },
+    loading: { bg: '#2d2f6b', border: '#6366f1', color: '#c7d2fe' },
+    success: { bg: '#064e3b', border: '#10b981', color: '#6ee7b7' },
+    error:   { bg: '#7f1d1d', border: '#ef4444', color: '#fecaca' },
+    warning: { bg: '#78350f', border: '#f59e0b', color: '#fde68a' },
     idle:    { bg: '', border: '', color: '' },
   }[status.type]
   return (
-    <div style={{ marginTop: '12px', padding: '10px 14px', borderRadius: '10px', fontSize: '12px', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '8px', background: s.bg, border: `1px solid ${s.border}`, color: s.color, flexWrap: 'wrap' }}>
-      {status.type === 'loading' && <div style={{ width: '12px', height: '12px', borderRadius: '50%', flexShrink: 0, border: '2px solid rgba(99,102,241,0.3)', borderTopColor: '#818cf8', animation: 'spin 0.8s linear infinite' }} />}
-      <span style={{ flex: 1 }}>{status.message}</span>
+    <div style={{ marginTop: '12px', padding: '12px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 500, display: 'flex', alignItems: 'flex-start', gap: '8px', background: s.bg, border: `1px solid ${s.border}`, color: s.color, flexWrap: 'wrap' }}>
+      {status.type === 'loading' && <div style={{ width: '13px', height: '13px', borderRadius: '50%', flexShrink: 0, marginTop: '2px', border: '2px solid rgba(99,102,241,0.4)', borderTopColor: '#818cf8', animation: 'spin 0.8s linear infinite' }} />}
+      <span style={{ flex: 1, whiteSpace: 'pre-line' }}>{status.message}</span>
     </div>
   )
 }
@@ -255,9 +255,9 @@ export default function Dashboard({ user, authFetch, onLogout, onNavigate, curre
           return _doSubmit(formData, action, attempt + 1)
         }
         // Hết retry
-        const errMsg = String(data.message || data.error || 'Dịch vụ AI không khả dụng')
-        showStatus('error', `❌ ${errMsg}. Vui lòng thử lại sau.`, 12000)
-        toast.error('Không thể phân tích', 'Dịch vụ AI không khả dụng. Thử lại sau.')
+        const AI_TEMP_FIX = `⚠️ AI tạm thời không khả dụng\n\nCách fix tạm thời:\n• Sử dụng kết nối mạng khác (đổi WiFi hoặc dùng 4G/5G)\n• Thử lại sau vài phút\n• Dữ liệu phiên học của bạn đã được lưu an toàn`
+        showStatus('error', AI_TEMP_FIX, 20000)
+        toast.error('Không thể phân tích', 'Dịch vụ AI không khả dụng. Dữ liệu đã lưu.')
         setAiStatus({ phase: 'ready' }); setAnalyzing(false)
         return
       }
@@ -267,12 +267,9 @@ export default function Dashboard({ user, authFetch, onLogout, onNavigate, curre
         const sessionNumber = data.session_number as number
         setTodaySessions(null); pendingData.current = null
         formRef.current?.reset()
-        const aiErr = String(data.ai_error || data.message || 'AI không khả dụng')
-        showStatus('error',
-          `❌ Đã lưu phiên ${sessionNumber} nhưng AI thất bại: ${aiErr.slice(0, 120)}`,
-          12000,
-        )
-        toast.error(`Phân tích AI thất bại`, 'Phiên học đã lưu. Thử lại bằng cách nhập phiên mới.')
+        const AI_TEMP_FIX = `⚠️ Đã lưu phiên ${sessionNumber} nhưng AI không phản hồi\n\nCách fix tạm thời:\n• Sử dụng kết nối mạng khác (đổi WiFi hoặc dùng 4G/5G)\n• Thử lại sau vài phút\n• Dữ liệu phiên học của bạn đã được lưu an toàn`
+        showStatus('error', AI_TEMP_FIX, 20000)
+        toast.error(`Phân tích AI thất bại`, 'Phiên học đã lưu. Thử kết nối khác.')
         setAiStatus({ phase: 'ready' }); setAnalyzing(false)
         await loadData()
         return
