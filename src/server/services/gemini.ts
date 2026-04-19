@@ -618,19 +618,8 @@ async function callGeminiModelSafely(
 //   formatAnalysisData   — nhận historyData thô, tự slice(0,7).reverse() → ASC bên trong
 
 // ── Default model pool (used as fallback when DB is unavailable) ──────────────
-// ⚠️ TRẠNG THÁI THỰC TẾ (nguồn: matrix test 2026-04-19):
-//   Model                         │ Key hoạt động          │ Ghi chú
-//   ──────────────────────────────┼────────────────────────┼──────────────────
-//   gemini-2.5-flash              │ April✅ June✅          │ ưu tiên 1 — RPD 10K/key
-//   gemini-2.5-flash-lite         │ March✅ (fallback)      │ ưu tiên 2 — RPD Unlimited
-//   gemini-3.1-flash-lite-preview │ hay 503/timeout        │ ưu tiên 3 — RPD 150K/key
-//   gemini-2.0-flash-lite         │ ❌ quota exhausted     │ backup cuối
-//   gemini-2.0-flash              │ ❌ quota exhausted     │ backup cuối
-//
-//   Key May (AIzaSyA1HBhRtj337...) bị PREPAID_DEPLETED — đã loại khỏi pool
-//   Thứ tự key pool hiện tại: April[0] → March[1] → June[2] → July[3]
-//
-// DB config (model_config table) sẽ override list này nếu đọc được.
+// ⚠️ Luôn ưu tiên đọc từ DB (model_config table). List này chỉ dùng khi DB lỗi.
+// Thứ tự: thử nhiều model nhất, quota cao nhất → thấp nhất
 const DEFAULT_MODEL_DEFS: Array<{ name: string; timeout: number; priority: string }> = [
   { name: 'gemini-2.5-flash',              timeout: 25000, priority: 'primary'  },
   { name: 'gemini-2.5-flash-lite',         timeout: 25000, priority: 'fallback' },
@@ -702,20 +691,23 @@ JSON có đúng 7 fields: risk_level, key_signals (array), short_term_forecast, 
   }
 
   // ── Sequential (model × key) attempt matrix ──────────────────────────────
-  // Rotation policy:
-  //   429 quota/rate-limit  → mark key exhausted, try next key same model
-  //   503/overload          → skip model immediately (server-side issue, all keys same)
-  //   401 invalid key       → mark key invalid permanently
-  //   400/404               → skip model immediately (config/name issue)
-  //   TIMEOUT               → mark key exhausted, try next key (timeout ≠ overload)
-  //   parse/validation err  → try next key
+  // Rotation policy (PER MODEL, không share exhausted state giữa models):
   //
-  //   FAST-FAIL: nếu key đầu tiên 429 → thử các key còn lại; nếu TẤT CẢ 429 → skip model ngay.
-  //   Không thử exhausted keys ở model hiện tại vì hết RPD/RPM toàn cục rồi.
+  //   QUAN TRỌNG: exhaustedKeys chỉ tồn tại trong scope của từng model.
+  //   Lý do: key có thể hết quota RPM cho model A nhưng vẫn còn quota cho model B
+  //   (mỗi model có RPM/RPD bucket riêng biệt).
+  //   Chỉ invalidKeys (401/403/PREPAID) là vĩnh viễn cross-model.
+  //
+  //   Per-model rotation:
+  //     429/quota   → exhausted cho model này, thử key tiếp theo
+  //     503/overload → skip cả model ngay (server overload affects all keys)
+  //     401/403/PREPAID → invalid vĩnh viễn (cross-model)
+  //     400/404     → skip cả model (config/name issue)
+  //     TIMEOUT     → exhausted cho model này, thử key tiếp theo
+  //     parse/val   → thử key tiếp theo
 
   const attemptResults: ModelAttempt[] = []
-  const invalidKeys   = new Set<number>()   // 401: skip vĩnh viễn
-  const exhaustedKeys = new Set<number>()   // 429/timeout: skip ưu tiên
+  const invalidKeys = new Set<number>()  // 401/403/PREPAID: skip vĩnh viễn, cross-model
 
   for (const modelConfig of modelDefs) {
     // ── Overall timeout guard ────────────────────────────────────────────────
@@ -725,26 +717,28 @@ JSON có đúng 7 fields: risk_level, key_signals (array), short_term_forecast, 
       break
     }
 
-    let modelSucceeded = false
-    let skipThisModel  = false
+    let modelSucceeded  = false
+    let skipThisModel   = false
+    // exhaustedKeys là PER-MODEL — reset mỗi model mới
+    const exhaustedThisModel = new Set<number>()
 
-    // Chỉ dùng key chưa invalid và chưa exhausted (không retry exhausted keys)
-    // Lý do: nếu key đã 429 ở model trước, key đó cũng sẽ 429 ở model này (cùng RPD bucket)
-    const freshKeys = Array.from({ length: keyPool.length }, (_, i) => i)
-      .filter(i => !invalidKeys.has(i) && !exhaustedKeys.has(i))
+    // Lấy tất cả key còn valid (chưa bị 401/403/PREPAID)
+    const availableKeys = Array.from({ length: keyPool.length }, (_, i) => i)
+      .filter(i => !invalidKeys.has(i))
 
-    if (freshKeys.length === 0) {
-      console.log(`⛔ [${modelConfig.name}] Không còn key fresh — bỏ qua model`)
-      continue
+    if (availableKeys.length === 0) {
+      console.log(`⛔ [${modelConfig.name}] Không còn key hợp lệ — dừng toàn bộ`)
+      break
     }
 
     const remainingMs      = OVERALL_TIMEOUT_MS - (Date.now() - overallStart)
     const effectiveTimeout = Math.min(modelConfig.timeout, Math.max(remainingMs - 1000, 5000))
 
-    console.log(`🔄 [${modelConfig.name}] Start — timeout=${effectiveTimeout}ms, remaining=${remainingMs}ms, freshKeys=[${freshKeys.map(i => getKeyName(i)).join(',')}]`)
+    console.log(`🔄 [${modelConfig.name}] Start — timeout=${effectiveTimeout}ms, remaining=${remainingMs}ms, keys=[${availableKeys.map(i => getKeyName(i)).join(',')}]`)
 
-    for (const keyIdx of freshKeys) {
+    for (const keyIdx of availableKeys) {
       if (skipThisModel) break
+      if (exhaustedThisModel.has(keyIdx)) continue
 
       // Re-check overall timeout before each key call
       const beforeCall = Date.now() - overallStart
@@ -793,16 +787,17 @@ JSON có đúng 7 fields: risk_level, key_signals (array), short_term_forecast, 
       const msg = outcome.message ?? ''
 
       if (/prepayment|credits.{0,20}depleted|depleted.{0,20}credits/i.test(msg)) {
-        // Prepaid credits hết hoàn toàn → key vô dụng vĩnh viễn, không phải chỉ hết RPD hôm nay
-        console.warn(`💳 [${modelConfig.name}][${keyName}] PREPAID_DEPLETED — invalidate key permanently`)
+        // PREPAID_DEPLETED: key hết tiền hoàn toàn — invalid vĩnh viễn, cross-model
+        console.warn(`💳 [${modelConfig.name}][${keyName}] PREPAID_DEPLETED — invalidate key permanently (all models)`)
         invalidKeys.add(keyIdx)
 
       } else if (/429|quota|rate.?limit/i.test(msg)) {
-        console.log(`🔒 [${modelConfig.name}][${keyName}] 429 quota exhausted — try next key`)
-        exhaustedKeys.add(keyIdx)
+        // 429: hết quota cho model này, nhưng key vẫn có thể dùng cho model khác
+        console.log(`🔒 [${modelConfig.name}][${keyName}] 429 quota — exhausted for THIS model, try next key`)
+        exhaustedThisModel.add(keyIdx)
 
       } else if (/401|invalid.?key/i.test(msg)) {
-        console.warn(`🔑 [${modelConfig.name}][${keyName}] 401 invalid key — skip permanently`)
+        console.warn(`🔑 [${modelConfig.name}][${keyName}] 401 invalid key — skip permanently (all models)`)
         invalidKeys.add(keyIdx)
 
       } else if (/HTTP_400/i.test(msg)) {
@@ -810,7 +805,7 @@ JSON có đúng 7 fields: risk_level, key_signals (array), short_term_forecast, 
         skipThisModel = true
 
       } else if (/HTTP_403/i.test(msg)) {
-        console.warn(`🔑 [${modelConfig.name}][${keyName}] HTTP 403 forbidden — skip key`)
+        console.warn(`🔑 [${modelConfig.name}][${keyName}] HTTP 403 forbidden — skip key permanently`)
         invalidKeys.add(keyIdx)
 
       } else if (/HTTP_404/i.test(msg)) {
@@ -818,23 +813,25 @@ JSON có đúng 7 fields: risk_level, key_signals (array), short_term_forecast, 
         skipThisModel = true
 
       } else if (/503|overload|unavailable|high.?demand/i.test(msg)) {
-        // 503 = server-side overload, all keys will get same response → skip model
+        // 503 = server-side overload, all keys same → skip model
         console.log(`⚡ [${modelConfig.name}][${keyName}] 503 server overload — skip model immediately`)
         skipThisModel = true
 
       } else if (/TIMEOUT/i.test(msg)) {
-        // Timeout on 1 key ≠ model overloaded. Try next fresh key.
-        console.log(`⏰ [${modelConfig.name}][${keyName}] Timeout — mark exhausted, try next key`)
-        exhaustedKeys.add(keyIdx)
+        // Timeout: exhausted cho model này (server đang chậm), thử key khác
+        console.log(`⏰ [${modelConfig.name}][${keyName}] Timeout — exhausted for THIS model, try next key`)
+        exhaustedThisModel.add(keyIdx)
 
       } else {
-        // Parse/validation/network error → try next key
+        // Parse/validation/network error → thử key tiếp theo
         console.log(`⚠️  [${modelConfig.name}][${keyName}] ${outcome.error}: ${msg.slice(0, 80)} — try next key`)
       }
     }
 
     if (!modelSucceeded) {
-      const reason = skipThisModel ? 'skip (503/400/404)' : `all ${freshKeys.length} fresh key(s) exhausted/failed`
+      const reason = skipThisModel
+        ? 'skip (503/400/404)'
+        : `all ${availableKeys.length} key(s) exhausted/failed for this model`
       console.log(`🔁 [${modelConfig.name}] Failed (${reason}) — next model`)
     }
   }

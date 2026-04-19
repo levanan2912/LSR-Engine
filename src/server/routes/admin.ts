@@ -497,19 +497,14 @@ admin.get('/model-config', async (c) => {
 
     if (!count || count.cnt === 0) {
       // ⚠️ Thứ tự ưu tiên đúng theo RPD thực tế (Google AI Studio, 2026-04):
-      //   1. gemini-3.1-flash-lite-preview → 500 RPD (ưu tiên cao nhất)
-      //   2. gemini-2.0-flash-lite         → 200 RPD
-      //   3. gemini-2.0-flash              → 200 RPD
-      //   4. gemini-2.5-flash              → 20  RPD
-      //   5. gemini-2.5-flash-lite         → 20  RPD (last resort)
+      // Auto-seed defaults (chỉ chạy khi bảng trống — INSERT OR IGNORE)
+      // daily_limit là số tham khảo, không dùng để giới hạn logic code
       const defaults = [
-        // Thứ tự ưu tiên theo tình trạng thực tế (2026-04):
-        // 2.5-flash hoạt động ổn; 3.1/2.0 thường 503/429
-        ['gemini-2.5-flash',              'Gemini 2.5 Flash',      1, 1, 25000,  20],
-        ['gemini-2.5-flash-lite',         'Gemini 2.5 Flash Lite', 2, 1, 25000,  20],
-        ['gemini-3.1-flash-lite-preview', 'Gemini 3.1 Flash Lite', 10, 1, 25000, 500],
-        ['gemini-2.0-flash-lite',         'Gemini 2.0 Flash Lite', 11, 1, 25000, 200],
-        ['gemini-2.0-flash',              'Gemini 2.0 Flash',      12, 1, 25000, 200],
+        ['gemini-2.5-flash',              'Gemini 2.5 Flash',      1,  1, 25000, 10000],
+        ['gemini-2.5-flash-lite',         'Gemini 2.5 Flash Lite', 2,  1, 25000, 10000],
+        ['gemini-3.1-flash-lite-preview', 'Gemini 3.1 Flash Lite', 3,  1, 25000, 150000],
+        ['gemini-2.0-flash-lite',         'Gemini 2.0 Flash Lite', 10, 1, 25000, 200],
+        ['gemini-2.0-flash',              'Gemini 2.0 Flash',      11, 1, 25000, 200],
       ]
       for (const [name, label, order, enabled, timeout, limit] of defaults) {
         await c.env.DB.prepare(`
