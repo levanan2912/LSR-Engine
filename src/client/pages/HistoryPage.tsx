@@ -64,11 +64,26 @@ function DaySummaryBar({ sessions }: { sessions: SessionWithReport[] }) {
   const avgFocus = sessions.reduce((s, x) => s + (x.focus_level || 0), 0) / total
   const avgDrop  = sessions.reduce((s, x) => s + (x.dropout_feeling || 0), 0) / total
   const rankMap: Record<string, number> = { 'Stable': 0, 'Fluctuating': 1, 'High Risk': 2 }
-  const worst = sessions.map(s => s.report?.risk_level ?? 'Stable').reduce((w, l) => (rankMap[l] ?? 0) > (rankMap[w] ?? 0) ? l : w, 'Stable') as RiskKey
+  const hasReport = sessions.some(s => s.report)
+  const worst = hasReport
+    ? sessions.filter(s => s.report).map(s => s.report!.risk_level).reduce((w, l) => (rankMap[l] ?? 0) > (rankMap[w] ?? 0) ? l : w, 'Stable') as RiskKey
+    : null
 
   return (
     <>
-      <RiskBadge level={worst} />
+      {worst
+        ? <RiskBadge level={worst} />
+        : (
+          <div style={{
+            display: 'inline-flex', alignItems: 'center', gap: '4px',
+            background: 'rgba(100,116,139,0.10)', border: '1px solid rgba(100,116,139,0.25)',
+            borderRadius: '6px', padding: '3px 8px', flexShrink: 0,
+          }}>
+            <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#64748b', flexShrink: 0 }} />
+            <span style={{ color: '#94a3b8', fontSize: '10px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', whiteSpace: 'nowrap' }}>Chưa có AI</span>
+          </div>
+        )
+      }
       <Chip label="" value={`${totHours.toFixed(1)}h`} color="#60a5fa" />
       <Chip label="Focus" value={`${avgFocus.toFixed(1)}/5`} color={focusColor(avgFocus)} />
       <Chip label="Dropout" value={`${avgDrop.toFixed(1)}/5`} color={dropoutColor(avgDrop)} />
@@ -512,10 +527,9 @@ export default function HistoryPage({ user, authFetch, onLogout, onNavigate, cur
   useEffect(() => { loadHistory() }, [loadHistory])
 
   const toggleSession = (key: string) => setExpandedKey(prev => prev === key ? null : key)
-  // Only show dates that have at least one session with an AI report
+  // Show ALL dates (including sessions without AI report)
   const dates = historyData
     ? Object.keys(historyData.grouped_by_date)
-        .filter(date => historyData.grouped_by_date[date].some(s => s.report))
         .sort((a, b) => b.localeCompare(a))
     : []
   const displayName = user.full_name || user.email.split('@')[0]
