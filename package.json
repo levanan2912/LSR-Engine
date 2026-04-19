@@ -1,0 +1,39 @@
+{
+  "name": "studysignal",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:sandbox": "wrangler pages dev dist --d1=studysignal-production --local --ip 0.0.0.0 --port 3000",
+    "build": "npm run gen:admin && npm run build:client && npm run build:server && npm run postbuild",
+    "gen:admin": "node -e \"const fs=require('fs');const html=fs.readFileSync('public/static/admin.html','utf8');fs.writeFileSync('src/server/admin-html.ts','export const ADMIN_HTML = '+JSON.stringify(html)+'\\n')\"",
+    "build:client": "vite build --mode client",
+    "build:server": "vite build",
+    "postbuild": "node -e \"require('fs').writeFileSync('dist/_routes.json', JSON.stringify({version:1,include:['/*'],exclude:['/static/client.js','/static/style.css','/static/and-logo.png']}))\"",
+    "preview": "wrangler pages dev dist --d1=studysignal-production --local",
+    "deploy": "npm run build && wrangler pages deploy dist",
+    "cf-typegen": "wrangler types --env-interface CloudflareBindings",
+    "db:migrate:local": "wrangler d1 migrations apply studysignal-production --local",
+    "db:migrate:prod": "wrangler d1 migrations apply studysignal-production",
+    "db:reset": "rm -rf .wrangler/state/v3/d1 && npm run db:migrate:local"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "@types/bcryptjs": "^2.4.6",
+    "bcryptjs": "^3.0.2",
+    "hono": "^4.12.10",
+    "jose": "^5.10.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "recharts": "^2.15.3"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260402.1",
+    "@hono/vite-cloudflare-pages": "^0.4.2",
+    "@hono/vite-dev-server": "^0.18.2",
+    "@types/react": "^19.1.1",
+    "@types/react-dom": "^19.1.2",
+    "@vitejs/plugin-react": "^4.4.1",
+    "vite": "^6.3.5",
+    "wrangler": "^4.4.0"
+  }
+}
