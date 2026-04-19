@@ -389,7 +389,7 @@ export function parseGeminiResponse(responseText: string): Partial<AnalysisResul
 // May ❌ PREPAID_DEPLETED (đã xoá)
 // June = trùng April (đã xoá duplicate)
 
-export const KEY_NAMES: string[] = ['March', 'April', 'July', 'Key5']
+export const KEY_NAMES: string[] = ['March', 'April', 'May', 'June', 'July']
 
 export function getKeyName(keyIndex: number): string {
   return KEY_NAMES[keyIndex] ?? `Key#${keyIndex + 1}`
@@ -651,7 +651,7 @@ async function callGeminiModelSafely(
 const DEFAULT_MODEL_DEFS: Array<{ name: string; timeout: number; priority: string }> = [
   { name: 'gemini-2.5-flash',              timeout: 25000, priority: 'primary'  },
   { name: 'gemini-2.5-flash-lite',         timeout: 25000, priority: 'fallback' },
-  { name: 'gemini-3.1-flash-lite-preview', timeout: 25000, priority: 'backup'   },
+  { name: 'gemini-3.1-flash-lite-preview', timeout: 25000, priority: 'fallback'   },
   { name: 'gemini-2.0-flash-lite',         timeout: 25000, priority: 'backup'   },
   { name: 'gemini-2.0-flash',              timeout: 25000, priority: 'backup'   },
 ]

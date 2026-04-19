@@ -478,19 +478,22 @@ export default function Dashboard({ user, authFetch, onLogout, onNavigate, curre
         }}>
           {/* Form panel — scrolls independently */}
           <div style={{ flex: '1 1 0', overflowY: 'auto', padding: '10px 10px 0', minHeight: 0 }}>
-            <div style={{
-              background: 'var(--bg-card, rgba(255,255,255,0.03))',
-              border: '1px solid var(--border-card, rgba(255,255,255,0.07))',
-              borderRadius: '14px', padding: '12px 14px',
-              boxShadow: 'var(--card-shadow)',
-            }}>
-              <SectionHeader
-                icon="📝"
-                title="Nhật ký học tập hôm nay"
-                right={<AIStatusBar status={aiStatus} />}
-              />
-              <EntryForm ref={formRef} onSubmit={d => submitEntry(d)} loading={submitting} />
-              <StatusBanner status={submitStatus} />
+            {/* zoom 90% để StatusBanner luôn hiển thị trong viewport */}
+            <div style={{ zoom: 0.9 }}>
+              <div style={{
+                background: 'var(--bg-card, rgba(255,255,255,0.03))',
+                border: '1px solid var(--border-card, rgba(255,255,255,0.07))',
+                borderRadius: '14px', padding: '12px 14px',
+                boxShadow: 'var(--card-shadow)',
+              }}>
+                <SectionHeader
+                  icon="📝"
+                  title="Nhật ký học tập hôm nay"
+                  right={<AIStatusBar status={aiStatus} />}
+                />
+                <EntryForm ref={formRef} onSubmit={d => submitEntry(d)} loading={submitting} />
+                <StatusBanner status={submitStatus} />
+              </div>
             </div>
           </div>
 
