@@ -206,20 +206,21 @@ export default function AnalysisReportComponent({ report, loading }: Props) {
 
       {/* ── Risk Level Badge ─── */}
       <div style={{ animation: 'cardSlideIn 0.3s ease both' }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap', marginBottom: '4px' }}>
-          <div>
-            <div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.7px', marginBottom: '3px', fontFamily: 'Space Grotesk, sans-serif' }}>📡 Báo cáo Phân tích AI</div>
-            <div style={{ fontSize: '11px', color: 'var(--text-secondary)', fontFamily: 'JetBrains Mono, monospace' }}>{ts}</div>
-          </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '4px' }}>
           <div style={{
             display: 'inline-flex', alignItems: 'center', gap: '8px',
             background: theme.badgeBg,
             borderRadius: '20px', padding: '8px 18px',
             animation: theme.animation,
             boxShadow: `0 0 20px ${theme.glow}`,
+            flexShrink: 0,
           }}>
             <span style={{ color: '#fff', fontSize: '15px' }}>{theme.icon}</span>
             <span style={{ color: '#fff', fontSize: '13px', fontWeight: 800, letterSpacing: '0.8px', fontFamily: 'Space Grotesk, sans-serif' }}>{theme.label}</span>
+          </div>
+          <div>
+            <div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.7px', marginBottom: '2px', fontFamily: 'Space Grotesk, sans-serif' }}>📡 Báo cáo Phân tích AI</div>
+            <div style={{ fontSize: '11px', color: 'var(--text-secondary)', fontFamily: 'JetBrains Mono, monospace' }}>{ts}</div>
           </div>
         </div>
       </div>
