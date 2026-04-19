@@ -349,12 +349,89 @@ entries.post('/', async (c) => {
   }
 })
 
-// ─── POST /api/entries/:id/analysis (DISABLED) ───────────────────────────────
-// Tính năng retry analysis đã bị xóa theo yêu cầu.
-// AI phân tích ngay lúc POST /api/entries — không có retry sau.
+// ─── POST /api/entries/:id/analysis — Retry AI cho phiên chưa có report ──────
+// Dùng khi AI thất bại lúc POST /api/entries, user có thể retry sau mà không cần tạo phiên mới.
 
 entries.post('/:id/analysis', async (c) => {
-  return c.json({ error: 'Tính năng retry analysis không còn hỗ trợ. Vui lòng tạo phiên học mới.' }, 410)
+  const userId  = c.get('userId')
+  const entryId = parseInt(c.req.param('id'))
+  if (isNaN(entryId)) return c.json({ error: 'Invalid entry ID' }, 400)
+
+  try {
+    // Xác minh entry thuộc về user này
+    const entry = await c.env.DB.prepare(
+      'SELECT * FROM daily_entries WHERE id = ? AND user_id = ?'
+    ).bind(entryId, userId).first<Record<string, unknown>>()
+
+    if (!entry) return c.json({ error: 'Phiên học không tồn tại' }, 404)
+
+    // Kiểm tra đã có report chưa — nếu rồi thì không cần retry
+    const existing = await c.env.DB.prepare(
+      'SELECT id FROM analysis_reports WHERE entry_id = ? AND user_id = ?'
+    ).bind(entryId, userId).first()
+    if (existing) return c.json({ success: true, message: 'Đã có báo cáo AI, không cần retry', already_exists: true })
+
+    // Lấy lịch sử (tối đa 5 phiên trước entry này)
+    const previousSessions = await c.env.DB.prepare(`
+      SELECT session_date, session_number, study_hours, focus_level,
+             distraction_count, distracting_factors, goal_achieved,
+             emotional_state, dropout_feeling
+      FROM daily_entries
+      WHERE user_id = ? AND id != ? AND id < ?
+      ORDER BY session_date DESC, session_number DESC
+      LIMIT 5
+    `).bind(userId, entryId, entryId).all()
+
+    const todayEntry = {
+      study_hours:         Number(entry.study_hours),
+      focus_level:         Number(entry.focus_level),
+      distraction_count:   Number(entry.distraction_count),
+      distracting_factors: entry.distracting_factors as string | undefined,
+      goal_achieved:       Boolean(entry.goal_achieved),
+      emotional_state:     entry.emotional_state as string | undefined,
+      dropout_feeling:     Number(entry.dropout_feeling),
+      session_date:        entry.session_date as string,
+      session_number:      Number(entry.session_number),
+      session_time:        entry.session_time as string | undefined,
+    }
+
+    const analysis = await analyzeStudyBehavior(
+      todayEntry,
+      previousSessions.results as Record<string, unknown>[],
+      c.env.GEMINI_API_KEYS || c.env.GEMINI_API_KEY || '',
+      c.env.GEMINI_API_KEY || '',
+      c.env.DB,
+    )
+
+    // Lưu report
+    await c.env.DB.prepare(`
+      INSERT OR REPLACE INTO analysis_reports
+        (user_id, entry_id, report_date, risk_level, key_signals, short_term_forecast,
+         primary_risk_driver, intervention_strategy, action_plan_48h,
+         monitoring_protocol, raw_ai_response, analyzed_by, key_name)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      userId, entryId, entry.session_date,
+      analysis.risk_level,
+      JSON.stringify(analysis.key_signals),
+      analysis.short_term_forecast,
+      analysis.primary_risk_driver,
+      analysis.intervention_strategy,
+      JSON.stringify(analysis.action_plan_48h),
+      analysis.monitoring_protocol,
+      analysis.raw_ai_response || '',
+      analysis.analyzed_by || null,
+      analysis.key_name || null,
+    ).run()
+
+    console.log(`[StudySignal] Retry AI OK — entry ${entryId}, model=${analysis.analyzed_by}, key=${analysis.key_name}`)
+    return c.json({ success: true, analysis, latency: analysis.latency })
+
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error(`[StudySignal] Retry AI thất bại entry ${entryId}:`, msg)
+    return c.json({ success: false, error: 'ai_failed', message: msg }, 207)
+  }
 })
 
 // ─── GET /api/entries/pending (DISABLED) ─────────────────────────────────────
