@@ -180,8 +180,9 @@ export default function Dashboard({ user, authFetch, onLogout, onNavigate, curre
 
   const showStatus = useCallback((type: StatusType, message: string, autoMs?: number) => {
     if (statusTimer.current) clearTimeout(statusTimer.current)
+    statusTimer.current = null
     setSubmitStatus({ type, message })
-    if (autoMs) statusTimer.current = setTimeout(() => setSubmitStatus({ type: 'idle', message: '' }), autoMs)
+    if (autoMs && autoMs > 0) statusTimer.current = setTimeout(() => setSubmitStatus({ type: 'idle', message: '' }), autoMs)
   }, [])
 
   // ── _doSubmit: inner recursive — không gọi trực tiếp, dùng submitEntry ──────
@@ -262,7 +263,7 @@ export default function Dashboard({ user, authFetch, onLogout, onNavigate, curre
         }
         // Hết retry
         const AI_TEMP_FIX = `⚠️ AI tạm thời không khả dụng\n\nCách fix tạm thời:\n• Sử dụng kết nối mạng khác (đổi WiFi hoặc dùng 4G/5G)\n• Sử dụng VPN\n• Thử lại sau vài phút\n• Dữ liệu phiên học của bạn đã được lưu an toàn`
-        showStatus('error', AI_TEMP_FIX, 20000)
+        showStatus('error', AI_TEMP_FIX)
         toast.error('Không thể phân tích', 'Dịch vụ AI không khả dụng. Dữ liệu đã lưu.')
         setAiStatus({ phase: 'ready' }); setAnalyzing(false)
         return
