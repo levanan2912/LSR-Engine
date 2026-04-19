@@ -503,12 +503,13 @@ admin.get('/model-config', async (c) => {
       //   4. gemini-2.5-flash              → 20  RPD
       //   5. gemini-2.5-flash-lite         → 20  RPD (last resort)
       const defaults = [
-        // timeout_ms=25000 phù hợp với Workers Paid Plan (overall timeout 55s)
-        ['gemini-3.1-flash-lite-preview', 'Gemini 3.1 Flash Lite', 1, 1, 25000, 500],
-        ['gemini-2.0-flash-lite',         'Gemini 2.0 Flash Lite', 2, 1, 25000, 200],
-        ['gemini-2.0-flash',              'Gemini 2.0 Flash',      3, 1, 25000, 200],
-        ['gemini-2.5-flash',              'Gemini 2.5 Flash',      4, 1, 25000,  20],
-        ['gemini-2.5-flash-lite',         'Gemini 2.5 Flash Lite', 5, 1, 25000,  20],
+        // Thứ tự ưu tiên theo tình trạng thực tế (2026-04):
+        // 2.5-flash hoạt động ổn; 3.1/2.0 thường 503/429
+        ['gemini-2.5-flash',              'Gemini 2.5 Flash',      1, 1, 25000,  20],
+        ['gemini-2.5-flash-lite',         'Gemini 2.5 Flash Lite', 2, 1, 25000,  20],
+        ['gemini-3.1-flash-lite-preview', 'Gemini 3.1 Flash Lite', 10, 1, 25000, 500],
+        ['gemini-2.0-flash-lite',         'Gemini 2.0 Flash Lite', 11, 1, 25000, 200],
+        ['gemini-2.0-flash',              'Gemini 2.0 Flash',      12, 1, 25000, 200],
       ]
       for (const [name, label, order, enabled, timeout, limit] of defaults) {
         await c.env.DB.prepare(`
