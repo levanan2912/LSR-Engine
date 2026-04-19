@@ -166,9 +166,6 @@ export default function Dashboard({ user, authFetch, onLogout, onNavigate, curre
   const formRef      = useRef<EntryFormRef>(null)
   const toast        = useToast()
 
-  // ── state: entry đã lưu nhưng chưa có report ───────────────────────────────
-  const [pendingEntryId, setPendingEntryId] = useState<number | null>(null)
-  const [retryingAI,    setRetryingAI]    = useState(false)
 
   const loadData = useCallback(async () => {
     try {
@@ -180,7 +177,6 @@ export default function Dashboard({ user, authFetch, onLogout, onNavigate, curre
 
   useEffect(() => { loadData() }, [loadData])
 
-  // Auto-retry runs inline in _doSubmit after 207 response
 
   const showStatus = useCallback((type: StatusType, message: string, autoMs?: number) => {
     if (statusTimer.current) clearTimeout(statusTimer.current)
@@ -272,63 +268,15 @@ export default function Dashboard({ user, authFetch, onLogout, onNavigate, curre
         return
       }
 
-      // ── AI thất bại (HTTP 207 hoặc success:false) — tự động retry 1 lần ──
+      // ── AI thất bại (HTTP 207 hoặc success:false) ──
       if (res.status === 207 || data.success === false) {
         const sessionNumber = data.session_number as number
-        const savedEntryId  = data.entry_id as number | undefined
         setTodaySessions(null); pendingData.current = null
         formRef.current?.reset()
         await loadData()
-
-        // Nếu có entry_id → tự động retry AI sau 3 giây
-        if (savedEntryId) {
-          setPendingEntryId(savedEntryId)
-          showStatus('warning', `⚠️ Phiên ${sessionNumber} đã lưu. Đang thử phân tích AI lần nữa...`, 5000)
-          setAiStatus({ phase: 'ready' }); setAnalyzing(false)
-          // Auto-retry sau 3s
-          setTimeout(async () => {
-            try {
-              setRetryingAI(true)
-              showStatus('loading', '⏳ Đang thử phân tích AI lần 2...', 15000)
-              const retryRes = await authFetch(`/api/entries/${savedEntryId}/analysis`, { method: 'POST' })
-              const retryData = await retryRes.json() as Record<string, unknown>
-              if (retryData.success && retryData.analysis) {
-                const a = retryData.analysis as Record<string, unknown>
-                setReport({
-                  id: savedEntryId, user_id: user.id, entry_id: savedEntryId,
-                  report_date: new Date(Date.now() + 7*3600000).toISOString().split('T')[0],
-                  created_at:  new Date(Date.now() + 7*3600000).toISOString(),
-                  risk_level: String(a.risk_level || 'Fluctuating'),
-                  key_signals: Array.isArray(a.key_signals) ? a.key_signals as string[] : [],
-                  action_plan_48h: Array.isArray(a.action_plan_48h) ? a.action_plan_48h as string[] : [],
-                  short_term_forecast: String(a.short_term_forecast || ''),
-                  primary_risk_driver: String(a.primary_risk_driver || ''),
-                  intervention_strategy: String(a.intervention_strategy || ''),
-                  monitoring_protocol: String(a.monitoring_protocol || ''),
-                  analyzed_by: String(a.analyzed_by || ''),
-                  key_name: String(a.key_name || ''),
-                  latency: a.latency as number,
-                })
-                setPendingEntryId(null)
-                showStatus('success', `✅ Phân tích AI phiên ${sessionNumber} hoàn tất!`, 5000)
-                toast.success('AI thành công', `Phiên ${sessionNumber} đã được phân tích.`)
-              } else {
-                setPendingEntryId(savedEntryId)  // giữ lại để user bấm retry thủ công
-                showStatus('error', `⚠️ AI vẫn chưa phản hồi. Bấm "Retry AI" để thử lại.\nDữ liệu phiên ${sessionNumber} đã được lưu an toàn.`, 0)
-                toast.error('AI thất bại', 'Bấm nút Retry AI để thử lại.')
-              }
-            } catch {
-              setPendingEntryId(savedEntryId)
-              showStatus('error', `⚠️ Không thể kết nối AI. Bấm "Retry AI" để thử lại.\nDữ liệu phiên ${sessionNumber} đã lưu an toàn.`, 0)
-            } finally {
-              setRetryingAI(false)
-            }
-          }, 3000)
-        } else {
-          showStatus('error', `⚠️ Đã lưu phiên ${sessionNumber} nhưng AI thất bại.\nThử làm mới trang hoặc đợi vài phút rồi submit lại.`, 15000)
-          toast.error(`Phân tích AI thất bại`, 'Phiên học đã lưu.')
-          setAiStatus({ phase: 'ready' }); setAnalyzing(false)
-        }
+        showStatus('error', `⚠️ Đã lưu phiên ${sessionNumber} nhưng AI thất bại. Dữ liệu đã được lưu an toàn.`, 10000)
+        toast.error('Phân tích AI thất bại', 'Dữ liệu phiên học đã lưu.')
+        setAiStatus({ phase: 'ready' }); setAnalyzing(false)
         return
       }
 
@@ -405,7 +353,6 @@ export default function Dashboard({ user, authFetch, onLogout, onNavigate, curre
   const handleUpdate = () => { const d = pendingData.current; setTodaySessions(null); if (d) submitEntry(d, 'update') }
   const handleKeep   = () => { const d = pendingData.current; setTodaySessions(null); pendingData.current = null; if (d) submitEntry(d, 'keep') }
 
-  // pendingEntryId state handles retry now (inline in JSX)
 
   const displayName = user.full_name || user.email.split('@')[0]
 
@@ -550,59 +497,6 @@ export default function Dashboard({ user, authFetch, onLogout, onNavigate, curre
                 />
                 <EntryForm ref={formRef} onSubmit={d => submitEntry(d)} loading={submitting} />
                 <StatusBanner status={submitStatus} />
-                {/* Nút retry AI khi phiên đã lưu nhưng chưa có báo cáo */}
-                {pendingEntryId && !retryingAI && (
-                  <button
-                    onClick={async () => {
-                      setRetryingAI(true)
-                      showStatus('loading', '⏳ Đang thử phân tích AI...', 20000)
-                      try {
-                        const r = await authFetch(`/api/entries/${pendingEntryId}/analysis`, { method: 'POST' })
-                        const d = await r.json() as Record<string, unknown>
-                        if (d.success && d.analysis) {
-                          const a = d.analysis as Record<string, unknown>
-                          setReport({
-                            id: pendingEntryId, user_id: user.id, entry_id: pendingEntryId,
-                            report_date: new Date(Date.now()+7*3600000).toISOString().split('T')[0],
-                            created_at:  new Date(Date.now()+7*3600000).toISOString(),
-                            risk_level: String(a.risk_level||'Fluctuating'),
-                            key_signals: Array.isArray(a.key_signals)?a.key_signals as string[]:[],
-                            action_plan_48h: Array.isArray(a.action_plan_48h)?a.action_plan_48h as string[]:[],
-                            short_term_forecast: String(a.short_term_forecast||''),
-                            primary_risk_driver: String(a.primary_risk_driver||''),
-                            intervention_strategy: String(a.intervention_strategy||''),
-                            monitoring_protocol: String(a.monitoring_protocol||''),
-                            analyzed_by: String(a.analyzed_by||''),
-                            key_name: String(a.key_name||''),
-                            latency: a.latency as number,
-                          })
-                          setPendingEntryId(null)
-                          showStatus('success', '✅ Phân tích AI hoàn tất!', 5000)
-                          toast.success('AI thành công', 'Phiên học đã được phân tích.')
-                        } else {
-                          showStatus('error', '⚠️ AI vẫn thất bại. Thử lại sau ít phút.', 10000)
-                          toast.error('AI thất bại', 'Thử lại sau.')
-                        }
-                      } catch {
-                        showStatus('error', '⚠️ Lỗi kết nối. Thử lại sau.', 8000)
-                      } finally { setRetryingAI(false) }
-                    }}
-                    style={{
-                      marginTop: '8px', width: '100%', padding: '8px 16px',
-                      background: 'linear-gradient(135deg, #f59e0b, #d97706)',
-                      color: '#fff', border: 'none', borderRadius: '8px',
-                      fontSize: '13px', fontWeight: 600, cursor: 'pointer',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
-                    }}
-                  >
-                    🔄 Retry phân tích AI (phiên đã lưu chưa có báo cáo)
-                  </button>
-                )}
-                {retryingAI && (
-                  <div style={{ marginTop: '8px', textAlign: 'center', fontSize: '12px', color: 'var(--text-secondary)' }}>
-                    ⏳ Đang gọi AI...
-                  </div>
-                )}
               </div>
             </div>
           </div>
