@@ -384,10 +384,12 @@ export function parseGeminiResponse(responseText: string): Partial<AnalysisResul
 }
 
 // ─── Key name labels (theo thứ tự trong pool) ───────────────────────────────────
-// Vị trí 0 = March, 1 = April, ...
-// Nếu số key vượt quá tên đặt sẵn, fallback sang "Key#N"
+// Thứ tự KEY_NAMES phải khớp ĐÚNG với thứ tự key trong GEMINI_API_KEYS env:
+// [0]=March (nhiều token, ưu tiên 1), [1]=April (ưu tiên 2), [2]=July (quota thấp), [3]=Key5
+// May ❌ PREPAID_DEPLETED (đã xoá)
+// June = trùng April (đã xoá duplicate)
 
-export const KEY_NAMES: string[] = ['April', 'March', 'June', 'July']  // May removed (PREPAID_DEPLETED)
+export const KEY_NAMES: string[] = ['March', 'April', 'July', 'Key5']
 
 export function getKeyName(keyIndex: number): string {
   return KEY_NAMES[keyIndex] ?? `Key#${keyIndex + 1}`
