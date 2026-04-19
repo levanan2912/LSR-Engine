@@ -80,6 +80,7 @@ BƯỚC 5 — KẾ HOẠCH HÀNH ĐỘNG (action_plan_48h)
 - Không được thêm lời khuyên chung chung không xuất phát từ dữ liệu
 - Không gán nhãn tâm lý (lo lắng, mất động lực, tinh thần...), chỉ mô tả hành vi đo lường được
 - Không dùng từ tuyệt đối (chắc chắn, sẽ xảy ra, không thể...)
+- NGHIÊM CẤM dùng "phiên -1", "phiên -2", "phiên -N" hay số âm để chỉ phiên lịch sử. PHẢI dùng "1 phiên trước", "2 phiên trước", "3 phiên trước", v.v.
 
 ===== PHÂN LOẠI RỦI RO =====
 - Stable: Mức tập trung ổn định, Mức muốn bỏ cuộc thấp, Đạt mục tiêu
@@ -159,8 +160,8 @@ PHIÊN HIỆN TẠI:
     const label   = sameDay
       ? `cùng ngày S${s.session_number ?? ''}`
       : `${shortDate} S${s.session_number ?? ''}`
-    const offset  = recentThree.length - i   // -3, -2, -1
-    output += `- ${label} (phiên -${offset}): Tập trung ${s.focus_level}/5, Giờ học ${h}h, Mật độ ${density} lần/giờ, Mục tiêu ${s.goal_achieved ? 'Đạt' : 'Không đạt'}, Bỏ cuộc ${s.dropout_feeling}/5\n`
+    const offset  = recentThree.length - i   // 3, 2, 1 phiên trước
+    output += `- ${label} (${offset} phiên trước): Tập trung ${s.focus_level}/5, Giờ học ${h}h, Mật độ ${density} lần/giờ, Mục tiêu ${s.goal_achieved ? 'Đạt' : 'Không đạt'}, Bỏ cuộc ${s.dropout_feeling}/5\n`
   })
 
   // ── Các phiên cũ hơn (tham khảo thêm) ───────────────────────────────────
@@ -171,7 +172,7 @@ PHIÊN HIỆN TẠI:
       const dateStr = String(s.session_date)
       const [yr2, mo2, dy2] = dateStr.split('-')
       const shortDate2 = `${dy2}/${mo2}`
-      output += `- ${shortDate2} S${s.session_number ?? ''} (phiên -${n - i}): Tập trung ${s.focus_level}/5, Bỏ cuộc ${s.dropout_feeling}/5\n`
+      output += `- ${shortDate2} S${s.session_number ?? ''} (${n - i} phiên trước): Tập trung ${s.focus_level}/5, Bỏ cuộc ${s.dropout_feeling}/5\n`
     })
   }
 
@@ -185,6 +186,7 @@ CHUỖI XU HƯỚNG (từ cũ → mới, ${focusChain.length} phiên):
 - Mức bỏ cuộc:   ${dropoutChain.join(' → ')}
 
 LƯU Ý: Ưu tiên phân tích xu hướng dựa trên 3 phiên gần nhất. Đơn vị thời gian là PHIÊN, không phải ngày.
+QUY TẮC VIẾT: Khi đề cập đến phiên lịch sử trong output, PHẢI dùng dạng "N phiên trước" (ví dụ: "1 phiên trước", "2 phiên trước", "3 phiên trước"). NGHIÊM CẤM dùng "phiên -1", "phiên -2", "phiên -N" hay bất kỳ số âm nào để chỉ phiên học.
 `
 
   return output
@@ -251,6 +253,30 @@ function validateAnalysisOutput(analysis: Partial<AnalysisResult>): ValidationRe
 
 // ─── parseGeminiResponse ──────────────────────────────────────────────────────
 
+// sanitizeSessionRefs — thay "phiên -N" → "N phiên trước" trong text AI output
+function sanitizeSessionRefs(text: string): string {
+  // "phiên -3" → "3 phiên trước", "(phiên -2)" → "(2 phiên trước)", v.v.
+  return text
+    .replace(/phi[eê]n\s*-\s*(\d+)/gi, (_m, n) => `${n} phiên trước`)
+    .replace(/\(S(\d+),?\s*phi[eê]n\s*-\s*(\d+)\)/gi, (_m, s, n) => `(S${s}, ${n} phiên trước)`)
+}
+
+function sanitizeAnalysisResult(result: Partial<AnalysisResult>): Partial<AnalysisResult> {
+  if (result.key_signals)
+    result.key_signals = result.key_signals.map(sanitizeSessionRefs)
+  if (result.primary_risk_driver)
+    result.primary_risk_driver = sanitizeSessionRefs(result.primary_risk_driver)
+  if (result.short_term_forecast)
+    result.short_term_forecast = sanitizeSessionRefs(result.short_term_forecast)
+  if (result.intervention_strategy)
+    result.intervention_strategy = sanitizeSessionRefs(result.intervention_strategy)
+  if (result.action_plan_48h)
+    result.action_plan_48h = result.action_plan_48h.map(sanitizeSessionRefs)
+  if (result.monitoring_protocol)
+    result.monitoring_protocol = sanitizeSessionRefs(result.monitoring_protocol)
+  return result
+}
+
 // normalizeGeminiFields — map các alias field name mà Gemini hay dùng về đúng schema
 // Gemini đôi khi trả về: key_signals_detected, recommended_intervention_strategy,
 // monitoring_protocol (array thay vì string), v.v.
@@ -295,7 +321,7 @@ export function parseGeminiResponse(responseText: string): Partial<AnalysisResul
   // 1. Parse trực tiếp → normalize
   try {
     const raw = JSON.parse(responseText) as Record<string, unknown>
-    const normalized = normalizeGeminiFields(raw)
+    const normalized = sanitizeAnalysisResult(normalizeGeminiFields(raw))
     console.log('[StudySignal] JSON parse: SUCCESS (direct)')
     return normalized
   } catch { /* tiếp */ }
@@ -304,7 +330,7 @@ export function parseGeminiResponse(responseText: string): Partial<AnalysisResul
   const stripped = responseText.replace(/^```(?:json)?\s*/m, '').replace(/```\s*$/m, '').trim()
   try {
     const raw = JSON.parse(stripped) as Record<string, unknown>
-    const normalized = normalizeGeminiFields(raw)
+    const normalized = sanitizeAnalysisResult(normalizeGeminiFields(raw))
     console.log('[StudySignal] JSON parse: SUCCESS (markdown stripped)')
     return normalized
   } catch { /* tiếp */ }
@@ -314,7 +340,7 @@ export function parseGeminiResponse(responseText: string): Partial<AnalysisResul
   if (jsonMatch) {
     try {
       const raw = JSON.parse(jsonMatch[0]) as Record<string, unknown>
-      const normalized = normalizeGeminiFields(raw)
+      const normalized = sanitizeAnalysisResult(normalizeGeminiFields(raw))
       console.log('[StudySignal] JSON parse: SUCCESS (extracted object)')
       return normalized
     } catch { /* tiếp */ }
@@ -354,7 +380,7 @@ export function parseGeminiResponse(responseText: string): Partial<AnalysisResul
   const protocolMatch = responseText.match(/"monitoring_protocol"\s*:\s*"([\s\S]*?)"(?:\s*,|\s*\})/)
   if (protocolMatch) partial.monitoring_protocol = protocolMatch[1]
 
-  return partial
+  return sanitizeAnalysisResult(partial)
 }
 
 // ─── Key name labels (theo thứ tự trong pool) ───────────────────────────────────
