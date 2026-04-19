@@ -274,8 +274,8 @@ export default function Dashboard({ user, authFetch, onLogout, onNavigate, curre
         setTodaySessions(null); pendingData.current = null
         formRef.current?.reset()
         await loadData()
-        showStatus('error', `⚠️ Đã lưu phiên ${sessionNumber} nhưng AI thất bại. Dữ liệu đã được lưu an toàn.`, 10000)
-        toast.error('Phân tích AI thất bại', 'Dữ liệu phiên học đã lưu.')
+        showStatus('error', `⚠️ Đã lưu phiên ${sessionNumber} nhưng AI không phản hồi\n\nCách fix tạm thời:\n• Thay đổi mạng (WiFi/4G/5G/VPN)\n• Thử lại sau vài phút\n• Dữ liệu đã được lưu an toàn`, 0)
+        toast.error('AI không phản hồi', 'Dữ liệu phiên học đã lưu an toàn.')
         setAiStatus({ phase: 'ready' }); setAnalyzing(false)
         return
       }
