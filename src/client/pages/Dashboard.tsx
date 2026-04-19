@@ -263,7 +263,7 @@ export default function Dashboard({ user, authFetch, onLogout, onNavigate, curre
         }
         // Hết retry
         const AI_TEMP_FIX = `⚠️ AI tạm thời không khả dụng\n\nCách fix tạm thời:\n• Sử dụng kết nối mạng khác (đổi WiFi hoặc dùng 4G/5G)\n• Sử dụng VPN\n• Thử lại sau vài phút\n• Dữ liệu phiên học của bạn đã được lưu an toàn`
-        showStatus('error', AI_TEMP_FIX)
+        showStatus('error', AI_TEMP_FIX, 5000)
         toast.error('Không thể phân tích', 'Dịch vụ AI không khả dụng. Dữ liệu đã lưu.')
         setAiStatus({ phase: 'ready' }); setAnalyzing(false)
         return
@@ -275,7 +275,7 @@ export default function Dashboard({ user, authFetch, onLogout, onNavigate, curre
         setTodaySessions(null); pendingData.current = null
         formRef.current?.reset()
         await loadData()
-        showStatus('error', `⚠️ Đã lưu phiên ${sessionNumber} nhưng AI không phản hồi\n\nCách fix tạm thời:\n• Thay đổi mạng (WiFi/4G/5G/VPN)\n• Thử lại sau vài phút\n• Dữ liệu đã được lưu an toàn`, 0)
+        showStatus('error', `⚠️ Đã lưu phiên ${sessionNumber} nhưng AI không phản hồi\n\nCách fix tạm thời:\n• Thay đổi mạng (WiFi/4G/5G/VPN)\n• Thử lại sau vài phút\n• Dữ liệu đã được lưu an toàn`, 5000)
         toast.error('AI không phản hồi', 'Dữ liệu phiên học đã lưu an toàn.')
         setAiStatus({ phase: 'ready' }); setAnalyzing(false)
         return
