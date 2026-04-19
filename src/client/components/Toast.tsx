@@ -22,10 +22,10 @@ const ICONS: Record<ToastType, string> = {
 }
 
 const COLORS: Record<ToastType, { bg: string; border: string; text: string; progress: string }> = {
-  success: { bg: 'rgba(34,197,94,0.08)',  border: 'rgba(34,197,94,0.28)',  text: '#22c55e', progress: '#22c55e' },
-  error:   { bg: 'rgba(239,68,68,0.08)',  border: 'rgba(239,68,68,0.28)',  text: '#ef4444', progress: '#ef4444' },
-  warning: { bg: 'rgba(245,158,11,0.08)', border: 'rgba(245,158,11,0.28)', text: '#f59e0b', progress: '#f59e0b' },
-  info:    { bg: 'rgba(59,130,246,0.08)', border: 'rgba(59,130,246,0.28)', text: '#3b82f6', progress: '#3b82f6' },
+  success: { bg: '#052e16', border: '#22c55e', text: '#4ade80', progress: '#22c55e' },
+  error:   { bg: '#450a0a', border: '#ef4444', text: '#f87171', progress: '#ef4444' },
+  warning: { bg: '#431407', border: '#f59e0b', text: '#fbbf24', progress: '#f59e0b' },
+  info:    { bg: '#0c1a2e', border: '#3b82f6', text: '#60a5fa', progress: '#3b82f6' },
 }
 
 interface ToastCardProps {

@@ -304,6 +304,13 @@ function fmtDate(d) {
   if (!d) return '–'
   return d.substring(0,10)
 }
+// Báo cáo AI được tạo ra dựa trên phiên hiện tại phân tích lịch sử trước đó
+// → hiển thị "1 phiên trước đó" thay vì số âm hoặc 0
+function fmtReportSession(n) {
+  const prev = (n || 1) - 1
+  if (prev <= 0) return 'Phiên trước'
+  return 'P' + prev
+}
 function fmtDateTime(d) {
   if (!d) return '–'
   return d.replace('T',' ').substring(0,16)
@@ -950,7 +957,7 @@ async function loadReports() {
           rows.push(`<tr>
             <td style="color:var(--muted);font-size:11px;padding-left:24px">#${r.id}</td>
             <td>${fmtDate(r.report_date)}</td>
-            <td style="text-align:center">P${r.session_number||1}</td>
+            <td style="text-align:center">${fmtReportSession(r.session_number)}</td>
             <td>${riskBadge(r.risk_level)}</td>
             <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:12px" title="${r.primary_risk_driver||''}">${driver}</td>
             <td><button class="btn btn-ghost btn-sm" onclick="showReportDetail(${r.id})">Xem chi tiết</button></td>
@@ -966,7 +973,7 @@ async function loadReports() {
           <tr>
             <td style="color:var(--muted);font-size:11px">#${r.id}</td>
             <td>${fmtDate(r.report_date)}</td>
-            <td style="text-align:center">P${r.session_number||1}</td>
+            <td style="text-align:center">${fmtReportSession(r.session_number)}</td>
             <td>${riskBadge(r.risk_level)}</td>
             <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:12px" title="${r.primary_risk_driver||''}">${driver}</td>
             <td><button class="btn btn-ghost btn-sm" onclick="showReportDetail(${r.id})">Xem chi tiết</button></td>
@@ -995,7 +1002,7 @@ function showReportDetail(id) {
       <div>
         <div class="detail-row"><span class="detail-key">Người dùng:</span><span class="detail-val">${r.user_email}</span></div>
         <div class="detail-row"><span class="detail-key">Ngày báo cáo:</span><span class="detail-val">${fmtDate(r.report_date)}</span></div>
-        <div class="detail-row"><span class="detail-key">Phiên số:</span><span class="detail-val">P${r.session_number||1}</span></div>
+        <div class="detail-row"><span class="detail-key">Phiên số:</span><span class="detail-val">${fmtReportSession(r.session_number)}</span></div>
         ${r.analyzed_by ? `<div class="detail-row"><span class="detail-key">Tên Model Dùng:</span><span class="detail-val" style="color:var(--primary);font-weight:600">${r.analyzed_by}${r.key_name ? ' <span style="color:var(--muted);font-weight:400;font-size:11px">(' + r.key_name + ')</span>' : ''}</span></div>` : ''}
       </div>
       <div>
