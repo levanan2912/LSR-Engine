@@ -181,16 +181,20 @@ function ReportPanel({ report, riskLevel, isDark = true }: { report: SessionRepo
 }
 
 // ─── Session Row ──────────────────────────────────────────────────────────────
-function SessionRow({ session, expandedKey, onToggle, isDark = true }: {
+function SessionRow({ session, expandedKey, onToggle, isDark = true, authFetch, onReportLoaded }: {
   session: SessionWithReport
   expandedKey: string | null
   onToggle: (k: string) => void
   isDark?: boolean
+  authFetch: (url: string, options?: RequestInit) => Promise<Response>
+  onReportLoaded: (entryId: number, report: SessionReport) => void
 }) {
   const key    = `${session.session_date}-${session.session_number}`
   const isOpen = expandedKey === key
   const report = session.report
   const riskLvl = report?.risk_level ?? ''
+  const [retrying, setRetrying] = useState(false)
+  const [retryError, setRetryError] = useState<string | null>(null)
 
   return (
     <div style={{
@@ -310,7 +314,62 @@ function SessionRow({ session, expandedKey, onToggle, isDark = true }: {
           )}
           {report
             ? <ReportPanel report={report} riskLevel={riskLvl} isDark={isDark} />
-            : <p style={{ color: 'var(--text-secondary, #94a3b8)', fontSize: '12px', fontStyle: 'italic', margin: 0 }}>Chưa có báo cáo AI cho phiên này.</p>
+            : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <p style={{ color: 'var(--text-secondary, #94a3b8)', fontSize: '12px', fontStyle: 'italic', margin: 0 }}>
+                  Chưa có báo cáo AI cho phiên này.
+                </p>
+                {retryError && (
+                  <p style={{ color: '#f87171', fontSize: '11px', margin: 0 }}>{retryError}</p>
+                )}
+                <button
+                  disabled={retrying}
+                  onClick={async (e) => {
+                    e.stopPropagation()
+                    setRetrying(true)
+                    setRetryError(null)
+                    try {
+                      const res = await authFetch(`/api/entries/${session.id}/analysis`, { method: 'POST' })
+                      const data = await res.json() as Record<string, unknown>
+                      if (data.success && data.analysis) {
+                        const a = data.analysis as Record<string, unknown>
+                        const newReport: SessionReport = {
+                          id: session.id,
+                          risk_level: String(a.risk_level || 'Fluctuating'),
+                          key_signals: Array.isArray(a.key_signals) ? a.key_signals as string[] : [],
+                          short_term_forecast: String(a.short_term_forecast || ''),
+                          primary_risk_driver: String(a.primary_risk_driver || ''),
+                          intervention_strategy: String(a.intervention_strategy || ''),
+                          action_plan_48h: Array.isArray(a.action_plan_48h) ? a.action_plan_48h as string[] : [],
+                          monitoring_protocol: String(a.monitoring_protocol || ''),
+                          raw_ai_response: null,
+                          created_at: new Date().toISOString(),
+                        }
+                        onReportLoaded(session.id, newReport)
+                      } else if (data.already_exists) {
+                        setRetryError('Báo cáo đã tồn tại, hãy tải lại trang.')
+                      } else {
+                        setRetryError('AI thất bại. Thử lại sau ít phút.')
+                      }
+                    } catch {
+                      setRetryError('Lỗi kết nối. Thử lại sau.')
+                    } finally {
+                      setRetrying(false)
+                    }
+                  }}
+                  style={{
+                    padding: '7px 14px', borderRadius: '8px', border: 'none',
+                    background: retrying ? 'rgba(245,158,11,0.3)' : 'linear-gradient(135deg, #f59e0b, #d97706)',
+                    color: '#fff', fontSize: '12px', fontWeight: 600, cursor: retrying ? 'not-allowed' : 'pointer',
+                    display: 'flex', alignItems: 'center', gap: '6px', width: 'fit-content',
+                    opacity: retrying ? 0.7 : 1, transition: 'opacity 0.2s',
+                    fontFamily: 'Space Grotesk, sans-serif',
+                  }}
+                >
+                  {retrying ? '⏳ Đang phân tích AI...' : '🔄 Retry phân tích AI'}
+                </button>
+              </div>
+            )
           }
         </div>
       )}
@@ -319,13 +378,15 @@ function SessionRow({ session, expandedKey, onToggle, isDark = true }: {
 }
 
 // ─── Day Group ────────────────────────────────────────────────────────────────
-function DayGroup({ date, sessions, expandedKey, onToggle, defaultOpen, isDark = true }: {
+function DayGroup({ date, sessions, expandedKey, onToggle, defaultOpen, isDark = true, authFetch, onReportLoaded }: {
   date: string
   sessions: SessionWithReport[]
   expandedKey: string | null
   onToggle: (k: string) => void
   defaultOpen: boolean
   isDark?: boolean
+  authFetch: (url: string, options?: RequestInit) => Promise<Response>
+  onReportLoaded: (entryId: number, report: SessionReport) => void
 }) {
   const [open, setOpen] = useState(defaultOpen)
 
@@ -393,6 +454,8 @@ function DayGroup({ date, sessions, expandedKey, onToggle, defaultOpen, isDark =
               expandedKey={expandedKey}
               onToggle={onToggle}
               isDark={isDark}
+              authFetch={authFetch}
+              onReportLoaded={onReportLoaded}
             />
           ))}
         </div>
@@ -527,6 +590,24 @@ export default function HistoryPage({ user, authFetch, onLogout, onNavigate, cur
   useEffect(() => { loadHistory() }, [loadHistory])
 
   const toggleSession = (key: string) => setExpandedKey(prev => prev === key ? null : key)
+
+  // Callback: cập nhật report vào state khi retry thành công (không cần reload toàn bộ)
+  const handleReportLoaded = useCallback((entryId: number, report: SessionReport) => {
+    setHistoryData(prev => {
+      if (!prev) return prev
+      const newGrouped = { ...prev.grouped_by_date }
+      for (const date of Object.keys(newGrouped)) {
+        newGrouped[date] = newGrouped[date].map(s =>
+          s.id === entryId ? { ...s, report } : s
+        )
+      }
+      const newSessions = prev.sessions.map(s =>
+        s.id === entryId ? { ...s, report } : s
+      )
+      return { ...prev, sessions: newSessions, grouped_by_date: newGrouped }
+    })
+  }, [])
+
   // Show ALL dates (including sessions without AI report)
   const dates = historyData
     ? Object.keys(historyData.grouped_by_date)
@@ -680,6 +761,8 @@ export default function HistoryPage({ user, authFetch, onLogout, onNavigate, cur
                   expandedKey={expandedKey} onToggle={toggleSession}
                   defaultOpen={idx === 0}
                   isDark={isDark}
+                  authFetch={authFetch}
+                  onReportLoaded={handleReportLoaded}
                 />
               ))}
             </div>
