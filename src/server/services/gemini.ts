@@ -432,19 +432,24 @@ async function callGeminiModelSafely(
   try {
     // ── Gọi Gemini API ─────────────────────────────────────────────────────
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`
-    // Thinking config khác nhau theo thế hệ model:
-    //   gemini-2.5-*  → thinkingBudget: 0  (tắt thinking, giảm latency 3-8s)
-    //   gemini-3.x-*  → thinkingLevel: "minimal" (giảm thinking tối đa, hỗ trợ bởi gemini-3.x)
-    //   gemini-2.0-*  → không gửi thinkingConfig (không hỗ trợ)
-    // ⚠️ QUAN TRỌNG — thinkingConfig và responseMimeType compatibility:
-    //   gemini-2.5-*  với thinkingBudget:0 → KHÔNG thể dùng responseMimeType:'application/json'
-    //                                       (API trả 400 "thinkingBudget incompatible with JSON mode")
-    //                 → Dùng text mode + parse JSON thủ công
-    //   gemini-2.5-*  với thinkingBudget>0  → có thể dùng responseMimeType (vẫn thinking)
-    //   gemini-3.x-*  → thinkingLevel='minimal' + responseMimeType OK
-    //   gemini-2.0-*  → responseMimeType OK, không dùng thinkingConfig
+    // ── thinkingConfig + responseMimeType compatibility ──────────────────────
+    // ⚠️ Tham khảo: https://ai.google.dev/gemini-api/docs/thinking
+    //
+    //  gemini-2.5-flash / gemini-2.5-flash-lite:
+    //    • Hỗ trợ thinkingBudget (0 = tắt thinking)
+    //    • thinkingBudget:0 KHÔNG TƯƠNG THÍCH với responseMimeType:'application/json'
+    //      (API trả 400 "thinkingBudget incompatible with JSON mode")
+    //    • → Dùng text mode (không set responseMimeType), parse JSON thủ công
+    //
+    //  gemini-3.1-flash-lite-preview (và gemini-3.x nói chung):
+    //    • Preview model — thinkingLevel chưa có tài liệu chính thức, có thể gây 400
+    //    • An toàn nhất: KHÔNG gửi thinkingConfig, chỉ dùng responseMimeType JSON
+    //    • → responseMimeType:'application/json', không thinkingConfig
+    //
+    //  gemini-2.0-flash / gemini-2.0-flash-lite:
+    //    • Không hỗ trợ thinkingConfig
+    //    • → responseMimeType:'application/json', không thinkingConfig
     const isGemini25 = /gemini-2\.5-/.test(modelName)
-    const isGemini3x = /gemini-3[\d.]*-/.test(modelName)
 
     const generationConfig: Record<string, unknown> = {
       temperature:     0.05,
@@ -454,16 +459,13 @@ async function callGeminiModelSafely(
     }
 
     if (isGemini25) {
-      // Gemini 2.5: thinkingBudget=0 KHÔNG tương thích với responseMimeType JSON
-      // → dùng text mode, parse JSON trong response text
+      // Gemini 2.5-*: thinkingBudget=0 tắt thinking mode để giảm latency.
+      // KHÔNG set responseMimeType khi dùng thinkingBudget:0 → model trả text, tự parse JSON.
       generationConfig.thinkingConfig = { thinkingBudget: 0 }
-      // KHÔNG set responseMimeType — để model trả text, ta tự parse JSON
-    } else if (isGemini3x) {
-      // Gemini 3.x: thinkingLevel=minimal OK với responseMimeType
-      generationConfig.thinkingConfig  = { thinkingLevel: 'minimal' }
-      generationConfig.responseMimeType = 'application/json'
+      // responseMimeType intentionally omitted — incompatible with thinkingBudget:0
     } else {
-      // gemini-2.0-* và các model khác: chỉ responseMimeType, không thinkingConfig
+      // gemini-3.1-flash-lite-preview, gemini-2.0-*, và các model khác:
+      // Dùng JSON mode chuẩn, không thinkingConfig (an toàn nhất với preview models).
       generationConfig.responseMimeType = 'application/json'
     }
 
