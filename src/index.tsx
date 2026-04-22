@@ -1,6 +1,5 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
-import { serveStatic } from 'hono/cloudflare-workers'
 import { ADMIN_HTML } from './server/admin-html'
 import authRoutes from './server/routes/auth'
 import entriesRoutes from './server/routes/entries'
@@ -33,9 +32,6 @@ app.route('/api/admin', adminRoutes)
 app.route('/api/chat', chatRoutes)
 app.route('/api/forum', forumRoutes)
 app.route('/api', geminiRoutes)
-
-// Serve static assets
-app.use('/static/*', serveStatic({ root: './' }))
 
 // Admin Console – serve embedded HTML directly, bypassing CF Pages static cache
 app.get('/admin', (c) => new Response(ADMIN_HTML, {
