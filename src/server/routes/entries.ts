@@ -275,6 +275,7 @@ entries.post('/', async (c) => {
     let aiError: string | null = null
 
     try {
+      console.log(`🤖 Gọi AI cho entry ${entryId} (session ${savedSessionNumber})...`)
       analysis = await analyzeStudyBehavior(
         todayEntry,
         previousSessions.results as Record<string, unknown>[],
@@ -288,6 +289,16 @@ entries.post('/', async (c) => {
       aiError = msg
     }
 
+    // ── Log analysis result để debug undefined fields ─────────────────────────
+    if (analysis) {
+      const undefinedFields = Object.entries(analysis)
+        .filter(([, v]) => v === undefined)
+        .map(([k]) => k)
+      if (undefinedFields.length > 0) {
+        console.warn(`⚠️ analysis có fields undefined: ${undefinedFields.join(', ')} — sẽ dùng default`)
+      }
+    }
+
     // ── AI thành công: lưu kết quả vào DB ────────────────────────────────────
     if (analysis) {
       await c.env.DB.prepare(`
@@ -299,15 +310,15 @@ entries.post('/', async (c) => {
       `).bind(
         userId, entryId, date,
         analysis.risk_level,
-        JSON.stringify(analysis.key_signals),
-        analysis.short_term_forecast,
-        analysis.primary_risk_driver,
-        analysis.intervention_strategy,
-        JSON.stringify(analysis.action_plan_48h),
-        analysis.monitoring_protocol,
-        analysis.raw_ai_response || '',
-        analysis.analyzed_by || null,
-        analysis.key_name || null,
+        JSON.stringify(analysis.key_signals ?? []),
+        analysis.short_term_forecast ?? '',
+        analysis.primary_risk_driver ?? '',
+        analysis.intervention_strategy ?? '',
+        JSON.stringify(analysis.action_plan_48h ?? []),
+        analysis.monitoring_protocol ?? '',   // deprecated field — default '' để tránh undefined
+        analysis.raw_ai_response ?? '',
+        analysis.analyzed_by ?? null,
+        analysis.key_name ?? null,
       ).run()
 
       console.log(`✅ Saved session ${savedSessionNumber} + AI report via ${analysis.analyzed_by}`)
@@ -413,15 +424,15 @@ entries.post('/:id/analysis', async (c) => {
     `).bind(
       userId, entryId, entry.session_date,
       analysis.risk_level,
-      JSON.stringify(analysis.key_signals),
-      analysis.short_term_forecast,
-      analysis.primary_risk_driver,
-      analysis.intervention_strategy,
-      JSON.stringify(analysis.action_plan_48h),
-      analysis.monitoring_protocol,
-      analysis.raw_ai_response || '',
-      analysis.analyzed_by || null,
-      analysis.key_name || null,
+      JSON.stringify(analysis.key_signals ?? []),
+      analysis.short_term_forecast ?? '',
+      analysis.primary_risk_driver ?? '',
+      analysis.intervention_strategy ?? '',
+      JSON.stringify(analysis.action_plan_48h ?? []),
+      analysis.monitoring_protocol ?? '',   // deprecated field — default '' để tránh undefined
+      analysis.raw_ai_response ?? '',
+      analysis.analyzed_by ?? null,
+      analysis.key_name ?? null,
     ).run()
 
     console.log(`[StudySignal] Retry AI OK — entry ${entryId}, model=${analysis.analyzed_by}, key=${analysis.key_name}`)
