@@ -231,7 +231,6 @@ export default function Dashboard({ user, authFetch, onLogout, onNavigate, curre
           action_plan_48h:       Array.isArray(a.action_plan_48h) ? a.action_plan_48h as string[] : [],
           short_term_forecast:   String(a.short_term_forecast   || ''),
           intervention_strategy: String(a.intervention_strategy || ''),
-          raw_ai_response:       (a.raw_ai_response as string)   ?? null,
           analyzed_by:           (a.analyzed_by as string)       ?? null,
           key_name:              (a.key_name as string)          ?? null,
         })
@@ -388,7 +387,6 @@ export default function Dashboard({ user, authFetch, onLogout, onNavigate, curre
           action_plan_48h:       Array.isArray(a.action_plan_48h) ? a.action_plan_48h as string[] : [],
           short_term_forecast:   String(a.short_term_forecast   || ''),
           intervention_strategy: String(a.intervention_strategy || ''),
-          raw_ai_response:       (a.raw_ai_response as string)   ?? null,
           analyzed_by:           (a.analyzed_by as string)       ?? null,
           key_name:              (a.key_name as string)           ?? null,
         })

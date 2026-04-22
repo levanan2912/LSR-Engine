@@ -97,7 +97,6 @@ function DaySummaryBar({ sessions }: { sessions: SessionWithReport[] }) {
 }
 
 // ─── Report Panel ─────────────────────────────────────────────────────────────
-// Mirrors AnalysisReport.tsx layout exactly (left-border card style, no monitoring_protocol, no primary_risk_driver)
 function ReportPanel({ report, riskLevel }: { report: SessionReport; riskLevel: string }) {
   const [checkedItems, setCheckedItems] = useState<Record<number, boolean>>({})
   const riskColor = riskLevel === 'High Risk' ? '#f87171' : riskLevel === 'Fluctuating' ? '#fbbf24' : '#34d399'

@@ -38,12 +38,8 @@ export interface AnalysisReport {
   short_term_forecast: string
   intervention_strategy: string
 
-  // Raw AI response (for debug/audit)
-  raw_ai_response?: string | null
-
-  // Model that produced this report (e.g. 'gemini-3-flash-preview_success', 'rule_based_fallback')
+  // Model info
   analyzed_by?: string | null
-  // Friendly name of the API key used (e.g. 'June')
   key_name?: string | null
 
   // Meta
@@ -72,7 +68,6 @@ export interface SessionReport {
   action_plan_48h: string[]
   analyzed_by: string | null
   key_name: string | null
-  raw_ai_response?: string | null
   created_at: string
 }
 

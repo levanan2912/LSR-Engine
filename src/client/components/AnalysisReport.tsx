@@ -188,19 +188,20 @@ export default function AnalysisReportComponent({ report, loading }: Props) {
   const theme = RISK_THEME[report.risk_level as keyof typeof RISK_THEME] ?? RISK_THEME['Stable']
   const meta = getModelMeta(report.analyzed_by ?? undefined)
 
-  // created_at từ SQLite: "2026-04-22 13:46:00" (UTC, không có T/Z suffix)
-  // Phải normalize thành ISO format trước khi parse để tránh browser interpret sai
+  // created_at từ DB: "2026-04-22 13:46:00" — đã là giờ VN, parse trực tiếp
   const ts = (() => {
-    if (!report.created_at) return report.report_date
-    // Thêm 'T' và 'Z' nếu chuỗi chưa có để đảm bảo parse đúng UTC
-    const iso = report.created_at.includes('T')
-      ? (report.created_at.endsWith('Z') ? report.created_at : report.created_at + 'Z')
-      : report.created_at.replace(' ', 'T') + 'Z'
+    const raw = report.created_at
+    if (!raw) return report.report_date
+    // Normalize "YYYY-MM-DD HH:MM:SS" → "YYYY-MM-DDTHH:MM:SS" (không thêm Z)
+    // để browser parse như local time, tránh bị lệch timezone
+    const normalized = raw.includes('T') ? raw.replace(/Z$/, '') : raw.replace(' ', 'T')
     try {
-      return new Date(iso).toLocaleString('vi-VN', {
-        day: '2-digit', month: '2-digit', year: 'numeric',
-        hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Ho_Chi_Minh',
-      })
+      const d = new Date(normalized)
+      const dd = String(d.getDate()).padStart(2, '0')
+      const mm = String(d.getMonth() + 1).padStart(2, '0')
+      const hh = String(d.getHours()).padStart(2, '0')
+      const min = String(d.getMinutes()).padStart(2, '0')
+      return `${hh}:${min} ${dd}/${mm}/${d.getFullYear()}`
     } catch { return report.report_date }
   })()
 
