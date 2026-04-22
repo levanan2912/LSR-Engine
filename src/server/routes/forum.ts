@@ -671,6 +671,64 @@ forum.post('/posts/:id/comments', async (c) => {
   }
 })
 
+// ─── CONTENT REPORTS ─────────────────────────────────────────────────────────
+
+const REPORT_REASONS = [
+  'spam',
+  'harassment',
+  'hate_speech',
+  'misinformation',
+  'off_topic',
+  'other',
+] as const
+type ReportReason = typeof REPORT_REASONS[number]
+
+// POST /api/forum/reports  — body: { target_type, target_id, reason, note? }
+forum.post('/reports', async (c) => {
+  const userId = c.get('userId')
+  const { DB } = c.env
+
+  let body: any
+  try { body = await c.req.json() } catch { return c.json({ error: 'invalid_json' }, 400) }
+
+  const targetType = String(body.target_type ?? '')
+  const targetId   = parseInt(String(body.target_id ?? ''), 10)
+  const reason     = String(body.reason ?? '').trim() as ReportReason
+  const note       = sanitize(String(body.note ?? ''), 500)
+
+  if (!['post', 'comment'].includes(targetType))
+    return c.json({ error: 'validation', message: 'target_type phải là post hoặc comment' }, 422)
+  if (isNaN(targetId) || targetId <= 0)
+    return c.json({ error: 'validation', message: 'target_id không hợp lệ' }, 422)
+  if (!REPORT_REASONS.includes(reason))
+    return c.json({ error: 'validation', message: 'Lý do báo cáo không hợp lệ' }, 422)
+
+  try {
+    // Verify target exists
+    const table  = targetType === 'post' ? 'forum_posts' : 'forum_comments'
+    const target = await DB.prepare(`SELECT id FROM ${table} WHERE id = ?`).bind(targetId).first()
+    if (!target) return c.json({ error: 'not_found', message: 'Nội dung không tồn tại' }, 404)
+
+    // Prevent self-report
+    const ownerCol = targetType === 'post' ? 'user_id' : 'user_id'
+    const owner = await DB.prepare(`SELECT ${ownerCol} FROM ${table} WHERE id = ?`).bind(targetId).first<{ user_id: number }>()
+    if (owner?.user_id === userId)
+      return c.json({ error: 'forbidden', message: 'Bạn không thể báo cáo nội dung của chính mình' }, 403)
+
+    await DB.prepare(
+      `INSERT INTO forum_content_reports (reporter_id, target_type, target_id, reason, note)
+       VALUES (?, ?, ?, ?, ?)`
+    ).bind(userId, targetType, targetId, reason, note || null).run()
+
+    return c.json({ success: true, message: 'Đã gửi báo cáo. Chúng tôi sẽ xem xét sớm nhất có thể.' })
+  } catch (err: any) {
+    if (err.message?.includes('UNIQUE')) {
+      return c.json({ error: 'duplicate', message: 'Bạn đã báo cáo nội dung này rồi.' }, 409)
+    }
+    return c.json({ error: 'db_error', message: err.message }, 500)
+  }
+})
+
 // DELETE /api/forum/comments/:id
 forum.delete('/comments/:id', async (c) => {
   const userId    = c.get('userId')

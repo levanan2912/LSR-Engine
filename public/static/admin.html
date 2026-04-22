@@ -1486,7 +1486,13 @@ async function saveModelConfig() {
 // ═══════════════════════════════════════════════════════════════════════════════
 // FORUM MODERATION PAGE
 // ═══════════════════════════════════════════════════════════════════════════════
-let forumModState = { tab: 'pending', pendingPage: 1, approvedPage: 1, approvedSearch: '', pendingTotal: 0, approvedTotal: 0 }
+let forumModState = {
+  tab: 'pending',
+  pendingPage: 1, approvedPage: 1, reportPage: 1,
+  approvedSearch: '',
+  reportStatus: 'pending', reportType: 'all',
+  pendingTotal: 0, approvedTotal: 0, reportTotal: 0,
+}
 
 function renderForumMod() {
   document.getElementById('content').innerHTML = `
@@ -1499,8 +1505,9 @@ function renderForumMod() {
     <div style="display:flex;gap:8px;margin-bottom:16px;border-bottom:1px solid var(--border);padding-bottom:10px">
       <button id="fmt-pending"  class="btn btn-sm btn-primary"  onclick="switchFmTab('pending')"  style="font-size:12px">⏳ Chờ duyệt <span id="fmt-pending-cnt" style="background:rgba(255,255,255,0.2);border-radius:10px;padding:0 6px;margin-left:4px"></span></button>
       <button id="fmt-approved" class="btn btn-sm btn-ghost"    onclick="switchFmTab('approved')" style="font-size:12px">✅ Đã duyệt</button>
+      <button id="fmt-reports"  class="btn btn-sm btn-ghost"    onclick="switchFmTab('reports')"  style="font-size:12px">🚩 Báo cáo nội dung <span id="fmt-reports-cnt" style="background:rgba(239,68,68,0.25);color:#ef4444;border-radius:10px;padding:0 6px;margin-left:4px;display:none"></span></button>
       <div style="flex:1"></div>
-      <button class="btn btn-ghost btn-sm" onclick="loadFmStats();loadFmPending();loadFmApproved()" style="font-size:12px">🔄 Làm mới</button>
+      <button class="btn btn-ghost btn-sm" onclick="loadFmStats();loadFmPending();loadFmApproved();loadFmReports()" style="font-size:12px">🔄 Làm mới</button>
     </div>
 
     <!-- Pending tab -->
@@ -1552,18 +1559,60 @@ function renderForumMod() {
         </div>
       </div>
     </div>
+
+    <!-- Content Reports tab -->
+    <div id="fm-tab-reports" style="display:none">
+      <div class="filter-bar" style="margin-bottom:14px">
+        <select id="fm-rep-status" onchange="forumModState.reportStatus=this.value;forumModState.reportPage=1;loadFmReports()"
+          style="background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:7px;color:var(--text);padding:6px 11px;font-size:12px">
+          <option value="pending">⏳ Chờ xử lý</option>
+          <option value="reviewed">✅ Đã xử lý</option>
+          <option value="dismissed">🚫 Đã bỏ qua</option>
+          <option value="all">Tất cả</option>
+        </select>
+        <select id="fm-rep-type" onchange="forumModState.reportType=this.value;forumModState.reportPage=1;loadFmReports()"
+          style="background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:7px;color:var(--text);padding:6px 11px;font-size:12px">
+          <option value="all">Tất cả loại</option>
+          <option value="post">📝 Bài viết</option>
+          <option value="comment">💬 Bình luận</option>
+        </select>
+        <button class="btn btn-primary btn-sm" onclick="forumModState.reportPage=1;loadFmReports()">Lọc</button>
+      </div>
+      <div class="section">
+        <div class="section-head">
+          <span class="section-title">🚩 Báo cáo nội dung vi phạm</span>
+          <span id="fm-reports-count" style="font-size:12px;color:var(--muted)"></span>
+        </div>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr>
+              <th>ID</th><th>Loại</th><th>Nội dung bị báo cáo</th><th>Lý do</th>
+              <th>Người báo cáo</th><th>Trạng thái</th><th>Ngày</th><th>Hành động</th>
+            </tr></thead>
+            <tbody id="fm-reports-tbody"><tr class="loading-row"><td colspan="8"><span class="spinner"></span></td></tr></tbody>
+          </table>
+        </div>
+        <div class="section-body" style="padding-top:0">
+          <div class="pagination" id="fm-reports-pagination"></div>
+        </div>
+      </div>
+    </div>
   `
   loadFmStats()
   loadFmPending()
   loadFmApproved()
+  loadFmReports()
 }
 
 function switchFmTab(tab) {
   forumModState.tab = tab
-  document.getElementById('fm-tab-pending').style.display  = tab === 'pending'  ? 'block' : 'none'
-  document.getElementById('fm-tab-approved').style.display = tab === 'approved' ? 'block' : 'none'
-  document.getElementById('fmt-pending').className  = 'btn btn-sm ' + (tab === 'pending'  ? 'btn-primary' : 'btn-ghost')
-  document.getElementById('fmt-approved').className = 'btn btn-sm ' + (tab === 'approved' ? 'btn-primary' : 'btn-ghost')
+  const tabs = ['pending','approved','reports']
+  tabs.forEach(t => {
+    const el = document.getElementById(`fm-tab-${t}`)
+    const btn = document.getElementById(`fmt-${t}`)
+    if (el)  el.style.display  = t === tab ? 'block' : 'none'
+    if (btn) btn.className     = 'btn btn-sm ' + (t === tab ? 'btn-primary' : 'btn-ghost')
+  })
 }
 
 async function loadFmStats() {
@@ -1600,7 +1649,134 @@ async function loadFmStats() {
     // Update pending tab count
     const cnt = document.getElementById('fmt-pending-cnt')
     if (cnt) cnt.textContent = d.pending > 0 ? d.pending : ''
+    // Update reports badge
+    const repCnt = document.getElementById('fmt-reports-cnt')
+    if (repCnt) {
+      repCnt.textContent = d.pending_reports
+      repCnt.style.display = d.pending_reports > 0 ? 'inline' : 'none'
+    }
   } catch(e) { toast(e.message, 'error') }
+}
+
+async function loadFmReports() {
+  const s = forumModState
+  const tbody = document.getElementById('fm-reports-tbody')
+  if (!tbody) return
+  tbody.innerHTML = '<tr class="loading-row"><td colspan="8"><span class="spinner"></span></td></tr>'
+
+  const REASON_LABELS = {
+    spam:'Spam / Quảng cáo', harassment:'Quấy rối / Xúc phạm',
+    hate_speech:'Ngôn từ thù hận', misinformation:'Thông tin sai lệch',
+    off_topic:'Không liên quan', other:'Khác',
+  }
+  const STATUS_BADGE = {
+    pending:   '<span class="badge badge-noreport">⏳ Chờ xử lý</span>',
+    reviewed:  '<span class="badge badge-stable">✅ Đã xử lý</span>',
+    dismissed: '<span class="badge badge-deact">🚫 Bỏ qua</span>',
+  }
+
+  try {
+    const d = await api(`/forum/content-reports?page=${s.reportPage}&limit=15&status=${s.reportStatus}&type=${s.reportType}`)
+    forumModState.reportTotal = d.total
+    const countEl = document.getElementById('fm-reports-count')
+    if (countEl) countEl.textContent = `${d.total} báo cáo`
+    if (!d.reports || d.reports.length === 0) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="8">Không có báo cáo nào</td></tr>'
+    } else {
+      tbody.innerHTML = d.reports.map(r => {
+        const typeBadge = r.target_type === 'post'
+          ? '<span class="badge badge-sub">📝 Bài viết</span>'
+          : '<span class="badge badge-user">💬 Bình luận</span>'
+        const previewShort = String(r.preview||'').substring(0,65) + (String(r.preview||'').length > 65 ? '…' : '')
+        const reasonLabel = REASON_LABELS[r.reason] || r.reason
+        const statusHtml  = STATUS_BADGE[r.status] || `<span class="badge">${r.status}</span>`
+        const actionBtns  = r.status === 'pending' ? `
+          <div style="display:flex;gap:5px;flex-wrap:wrap">
+            <button class="btn btn-ghost btn-sm" onclick="fmRepDetail(${r.id})" title="Xem chi tiết">👁</button>
+            <button class="btn btn-danger btn-sm" onclick="fmDeleteTarget(${r.id},'${r.target_type}',${r.target_id})">🗑 Xóa ND</button>
+            <button class="btn btn-success btn-sm" onclick="fmDismissReport(${r.id})">🚫 Bỏ qua</button>
+          </div>` : `<button class="btn btn-ghost btn-sm" onclick="fmRepDetail(${r.id})">👁 Xem</button>`
+
+        // store report data for detail modal
+        window['_frep_'+r.id] = r
+
+        return `<tr>
+          <td style="color:var(--muted);font-size:11px">#${r.id}</td>
+          <td>${typeBadge}</td>
+          <td style="max-width:200px;font-size:12px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escAttr(r.preview)}">${previewShort}</td>
+          <td style="font-size:12px;color:var(--warn);white-space:nowrap">${reasonLabel}</td>
+          <td class="email-cell" style="font-size:12px" title="${r.reporter_email}">${r.reporter_email}</td>
+          <td>${statusHtml}</td>
+          <td style="font-size:11px;color:var(--muted);white-space:nowrap">${fmtDate(r.created_at)}</td>
+          <td>${actionBtns}</td>
+        </tr>`
+      }).join('')
+    }
+    renderPagination('fm-reports-pagination', s.reportPage, d.total_pages, p=>{forumModState.reportPage=p;loadFmReports()})
+  } catch(e) { toast(e.message,'error') }
+}
+
+function fmRepDetail(id) {
+  const r = window['_frep_'+id]
+  if (!r) return
+  const REASON_LABELS = {
+    spam:'Spam / Quảng cáo', harassment:'Quấy rối / Xúc phạm',
+    hate_speech:'Ngôn từ thù hận', misinformation:'Thông tin sai lệch',
+    off_topic:'Không liên quan', other:'Khác',
+  }
+  document.getElementById('detail-title').textContent = `🚩 Báo cáo #${r.id}`
+  document.getElementById('detail-body').innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div class="detail-row"><span class="detail-key">Loại nội dung:</span><span class="detail-val">${r.target_type === 'post' ? '📝 Bài viết' : '💬 Bình luận'} #${r.target_id}</span></div>
+      <div class="detail-row"><span class="detail-key">Người báo cáo:</span><span class="detail-val">${r.reporter_email}</span></div>
+      <div class="detail-row"><span class="detail-key">Lý do:</span><span class="detail-val" style="color:var(--warn)">${REASON_LABELS[r.reason]||r.reason}</span></div>
+      ${r.note ? `<div class="detail-row"><span class="detail-key">Ghi chú:</span><span class="detail-val" style="white-space:pre-wrap">${r.note}</span></div>` : ''}
+      <div class="detail-row"><span class="detail-key">Trạng thái:</span><span class="detail-val">${r.status}</span></div>
+      ${r.admin_note ? `<div class="detail-row"><span class="detail-key">Ghi chú admin:</span><span class="detail-val">${r.admin_note}</span></div>` : ''}
+      <div style="background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;padding:12px">
+        <div style="font-size:11px;font-weight:600;color:var(--muted);margin-bottom:6px;text-transform:uppercase">Nội dung bị báo cáo</div>
+        <div style="font-size:13px;color:var(--text);line-height:1.6;white-space:pre-wrap">${escAttr(r.preview)}</div>
+      </div>
+      ${r.status === 'pending' ? `
+        <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px">
+          <textarea id="rep-admin-note" placeholder="Ghi chú nội bộ (không bắt buộc)..." rows="2"
+            class="form-input" style="resize:vertical;font-size:12px"></textarea>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-danger" onclick="fmDeleteTarget(${r.id},'${r.target_type}',${r.target_id},true)">🗑 Xóa nội dung vi phạm</button>
+            <button class="btn btn-ghost"  onclick="fmDismissReport(${r.id},true)">🚫 Bỏ qua báo cáo</button>
+          </div>
+        </div>
+      ` : ''}
+    </div>
+  `
+  document.getElementById('detail-modal').style.display = 'flex'
+}
+
+function fmDismissReport(id, fromDetail=false) {
+  const adminNote = fromDetail ? (document.getElementById('rep-admin-note')?.value || '') : ''
+  openConfirm('Bỏ qua báo cáo', `Đánh dấu báo cáo #${id} là "không vi phạm" và bỏ qua?`, async () => {
+    try {
+      await api(`/forum/content-reports/${id}`, { method:'PATCH', body: JSON.stringify({ status:'dismissed', admin_note: adminNote }) })
+      toast('🚫 Đã bỏ qua báo cáo', 'success')
+      if (fromDetail) document.getElementById('detail-modal').style.display = 'none'
+      loadFmStats(); loadFmReports()
+    } catch(e) { toast(e.message,'error') }
+  }, false, 'btn-ghost')
+}
+
+function fmDeleteTarget(reportId, targetType, targetId, fromDetail=false) {
+  openConfirm(
+    'Xóa nội dung vi phạm',
+    `Xóa vĩnh viễn ${targetType === 'post' ? 'bài viết' : 'bình luận'} #${targetId}? Hành động này không thể hoàn tác.`,
+    async () => {
+      try {
+        await api(`/forum/content-reports/${reportId}/target`, { method:'DELETE' })
+        toast('🗑 Đã xóa nội dung vi phạm', 'success')
+        if (fromDetail) document.getElementById('detail-modal').style.display = 'none'
+        loadFmStats(); loadFmReports()
+      } catch(e) { toast(e.message,'error') }
+    }, false, 'btn-danger'
+  )
 }
 
 async function loadFmPending() {
@@ -1740,9 +1916,11 @@ async function loadFmSidebarBadge() {
   try {
     const d = await api('/forum/stats')
     const badge = document.getElementById('sb-pending-badge')
+    // Show combined count: pending posts + pending reports
+    const total = (d.pending || 0) + (d.pending_reports || 0)
     if (badge) {
-      badge.textContent = d.pending
-      badge.style.display = d.pending > 0 ? 'inline' : 'none'
+      badge.textContent = total
+      badge.style.display = total > 0 ? 'inline' : 'none'
     }
   } catch { /* silent */ }
 }

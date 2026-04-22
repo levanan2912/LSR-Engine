@@ -716,11 +716,160 @@ admin.delete('/forum/posts/:id', async (c) => {
 admin.get('/forum/stats', async (c) => {
   const { DB } = c.env
   try {
-    const pending  = await DB.prepare(`SELECT COUNT(*) as c FROM forum_posts WHERE status='pending'`).first<{c:number}>()
-    const approved = await DB.prepare(`SELECT COUNT(*) as c FROM forum_posts WHERE status='approved'`).first<{c:number}>()
-    const total    = await DB.prepare(`SELECT COUNT(*) as c FROM forum_posts`).first<{c:number}>()
-    const comments = await DB.prepare(`SELECT COUNT(*) as c FROM forum_comments`).first<{c:number}>()
-    return c.json({ pending: pending?.c ?? 0, approved: approved?.c ?? 0, total: total?.c ?? 0, comments: comments?.c ?? 0 })
+    const pending         = await DB.prepare(`SELECT COUNT(*) as c FROM forum_posts WHERE status='pending'`).first<{c:number}>()
+    const approved        = await DB.prepare(`SELECT COUNT(*) as c FROM forum_posts WHERE status='approved'`).first<{c:number}>()
+    const total           = await DB.prepare(`SELECT COUNT(*) as c FROM forum_posts`).first<{c:number}>()
+    const comments        = await DB.prepare(`SELECT COUNT(*) as c FROM forum_comments`).first<{c:number}>()
+    const pendingReports  = await DB.prepare(`SELECT COUNT(*) as c FROM forum_content_reports WHERE status='pending'`).first<{c:number}>()
+    return c.json({
+      pending:         pending?.c         ?? 0,
+      approved:        approved?.c        ?? 0,
+      total:           total?.c           ?? 0,
+      comments:        comments?.c        ?? 0,
+      pending_reports: pendingReports?.c  ?? 0,
+    })
+  } catch (err: any) {
+    return c.json({ error: 'db_error', message: err.message }, 500)
+  }
+})
+
+// ─── CONTENT REPORTS ──────────────────────────────────────────────────────────
+
+const REPORT_REASON_LABELS: Record<string, string> = {
+  spam:          'Spam / Quảng cáo',
+  harassment:    'Quấy rối / Xúc phạm',
+  hate_speech:   'Ngôn từ thù hận',
+  misinformation:'Thông tin sai lệch',
+  off_topic:     'Không liên quan',
+  other:         'Khác',
+}
+
+// GET /api/admin/forum/content-reports?page=1&status=pending|reviewed|dismissed|all&type=post|comment|all
+admin.get('/forum/content-reports', async (c) => {
+  const { DB } = c.env
+  const page   = Math.max(1, parseInt(c.req.query('page')   || '1',  10))
+  const limit  = Math.min(50, Math.max(1, parseInt(c.req.query('limit') || '20', 10)))
+  const offset = (page - 1) * limit
+  const status = c.req.query('status') || 'pending'
+  const type   = c.req.query('type')   || 'all'
+
+  const conditions: string[] = []
+  const binds: unknown[] = []
+
+  if (status !== 'all') { conditions.push(`r.status = ?`); binds.push(status) }
+  if (type !== 'all')   { conditions.push(`r.target_type = ?`); binds.push(type) }
+
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
+
+  try {
+    const countRow = await DB.prepare(
+      `SELECT COUNT(*) as total FROM forum_content_reports r ${where}`
+    ).bind(...binds).first<{ total: number }>()
+
+    const rows = await DB.prepare(`
+      SELECT
+        r.id, r.target_type, r.target_id, r.reason, r.note,
+        r.status, r.admin_note, r.created_at, r.reviewed_at,
+        reporter.email  AS reporter_email,
+        reporter.full_name AS reporter_name,
+        reviewer.email  AS reviewer_email
+      FROM forum_content_reports r
+      JOIN users reporter ON reporter.id = r.reporter_id
+      LEFT JOIN users reviewer ON reviewer.id = r.reviewed_by
+      ${where}
+      ORDER BY r.created_at DESC
+      LIMIT ? OFFSET ?
+    `).bind(...binds, limit, offset).all<Record<string, unknown>>()
+
+    // For each report, pull a short preview of the target content
+    const enriched = await Promise.all(rows.results.map(async (row: any) => {
+      let preview = ''
+      try {
+        if (row.target_type === 'post') {
+          const p = await DB.prepare(
+            `SELECT title, content, user_id FROM forum_posts WHERE id = ?`
+          ).bind(row.target_id).first<{ title: string; content: string; user_id: number }>()
+          if (p) {
+            const author = await DB.prepare(`SELECT email FROM users WHERE id = ?`).bind(p.user_id).first<{ email: string }>()
+            preview = `[Bài viết] ${p.title} — ${author?.email ?? ''}`
+          } else { preview = '[Đã xóa]' }
+        } else {
+          const cmt = await DB.prepare(
+            `SELECT content, user_id FROM forum_comments WHERE id = ?`
+          ).bind(row.target_id).first<{ content: string; user_id: number }>()
+          if (cmt) {
+            const author = await DB.prepare(`SELECT email FROM users WHERE id = ?`).bind(cmt.user_id).first<{ email: string }>()
+            preview = `[Bình luận] ${String(cmt.content).slice(0, 80)} — ${author?.email ?? ''}`
+          } else { preview = '[Đã xóa]' }
+        }
+      } catch { /* ignore */ }
+      return { ...row, preview, reason_label: REPORT_REASON_LABELS[row.reason as string] ?? row.reason }
+    }))
+
+    return c.json({
+      reports: enriched,
+      total: countRow?.total ?? 0,
+      page,
+      limit,
+      total_pages: Math.ceil((countRow?.total ?? 0) / limit),
+    })
+  } catch (err: any) {
+    return c.json({ error: 'db_error', message: err.message }, 500)
+  }
+})
+
+// PATCH /api/admin/forum/content-reports/:id  — update status + optional admin_note
+admin.patch('/forum/content-reports/:id', async (c) => {
+  const adminUser = c.get('adminUser')
+  const { DB }    = c.env
+  const reportId  = parseInt(c.req.param('id'), 10)
+  if (isNaN(reportId)) return c.json({ error: 'invalid_id' }, 400)
+
+  let body: any
+  try { body = await c.req.json() } catch { return c.json({ error: 'invalid_json' }, 400) }
+
+  const newStatus = String(body.status ?? '')
+  const adminNote = String(body.admin_note ?? '').trim().slice(0, 500)
+  if (!['reviewed', 'dismissed'].includes(newStatus))
+    return c.json({ error: 'validation', message: 'status phải là reviewed hoặc dismissed' }, 422)
+
+  try {
+    const existing = await DB.prepare(`SELECT id FROM forum_content_reports WHERE id = ?`).bind(reportId).first()
+    if (!existing) return c.json({ error: 'not_found' }, 404)
+
+    await DB.prepare(`
+      UPDATE forum_content_reports
+      SET status = ?, admin_note = ?, reviewed_at = CURRENT_TIMESTAMP, reviewed_by = ?
+      WHERE id = ?
+    `).bind(newStatus, adminNote || null, adminUser.id, reportId).run()
+
+    return c.json({ success: true })
+  } catch (err: any) {
+    return c.json({ error: 'db_error', message: err.message }, 500)
+  }
+})
+
+// DELETE /api/admin/forum/content-reports/:id/target  — delete the reported content itself
+admin.delete('/forum/content-reports/:id/target', async (c) => {
+  const { DB }   = c.env
+  const reportId = parseInt(c.req.param('id'), 10)
+  if (isNaN(reportId)) return c.json({ error: 'invalid_id' }, 400)
+
+  try {
+    const report = await DB.prepare(
+      `SELECT target_type, target_id FROM forum_content_reports WHERE id = ?`
+    ).bind(reportId).first<{ target_type: string; target_id: number }>()
+    if (!report) return c.json({ error: 'not_found' }, 404)
+
+    const table = report.target_type === 'post' ? 'forum_posts' : 'forum_comments'
+    await DB.prepare(`DELETE FROM ${table} WHERE id = ?`).bind(report.target_id).run()
+
+    // Mark report as reviewed
+    await DB.prepare(
+      `UPDATE forum_content_reports SET status='reviewed', reviewed_at=CURRENT_TIMESTAMP WHERE id=?`
+    ).bind(reportId).run()
+
+    return c.json({ success: true, message: 'Đã xóa nội dung bị báo cáo.' })
   } catch (err: any) {
     return c.json({ error: 'db_error', message: err.message }, 500)
   }

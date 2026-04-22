@@ -57,6 +57,147 @@ function buildTree(flat: ForumComment[]): CommentNode[] {
   return roots
 }
 
+// ─── ReportModal ──────────────────────────────────────────────────────────────
+
+const REPORT_REASONS = [
+  { value: 'spam',          label: '🚫 Spam / Quảng cáo' },
+  { value: 'harassment',    label: '😡 Quấy rối / Xúc phạm' },
+  { value: 'hate_speech',   label: '🔥 Ngôn từ thù hận' },
+  { value: 'misinformation',label: '❗ Thông tin sai lệch' },
+  { value: 'off_topic',     label: '🌐 Không liên quan chủ đề' },
+  { value: 'other',         label: '📋 Khác' },
+]
+
+function ReportModal({ isDark, targetType, targetId, authFetch, onClose }: {
+  isDark: boolean
+  targetType: 'post' | 'comment'
+  targetId: number
+  authFetch: (url: string, options?: RequestInit) => Promise<Response>
+  onClose: () => void
+}) {
+  const [reason,  setReason]  = useState('')
+  const [note,    setNote]    = useState('')
+  const [loading, setLoading] = useState(false)
+  const [done,    setDone]    = useState(false)
+  const [err,     setErr]     = useState('')
+
+  const submit = async () => {
+    if (!reason) { setErr('Vui lòng chọn lý do.'); return }
+    setLoading(true); setErr('')
+    try {
+      const res  = await authFetch('/api/forum/reports', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target_type: targetType, target_id: targetId, reason, note }),
+      })
+      const data = await res.json() as any
+      if (res.ok)  { setDone(true) }
+      else         { setErr(data.message || 'Có lỗi xảy ra.') }
+    } catch { setErr('Lỗi kết nối.') }
+    setLoading(false)
+  }
+
+  const overlay: React.CSSProperties = {
+    position: 'fixed', inset: 0, zIndex: 1000,
+    background: 'rgba(0,0,0,0.65)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px',
+  }
+  const box: React.CSSProperties = {
+    background: isDark ? '#0f172a' : '#ffffff',
+    border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : '#e2e8f0'}`,
+    borderRadius: '14px', padding: '24px', width: '100%', maxWidth: '420px',
+    display: 'flex', flexDirection: 'column', gap: '14px',
+    boxShadow: '0 20px 60px rgba(0,0,0,0.45)',
+  }
+
+  return (
+    <div style={overlay} onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div style={box}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h3 style={{ fontSize: '15px', fontWeight: 700, color: isDark ? '#e2e8f0' : '#0f172a', margin: 0 }}>
+            🚩 Báo cáo {targetType === 'post' ? 'bài viết' : 'bình luận'}
+          </h3>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: isDark ? '#64748b' : '#94a3b8', lineHeight: 1 }}>×</button>
+        </div>
+
+        {done ? (
+          <div style={{ textAlign: 'center', padding: '20px 0' }}>
+            <div style={{ fontSize: '36px', marginBottom: '10px' }}>✅</div>
+            <div style={{ fontSize: '14px', fontWeight: 600, color: isDark ? '#e2e8f0' : '#0f172a', marginBottom: '6px' }}>Đã gửi báo cáo</div>
+            <div style={{ fontSize: '12px', color: isDark ? '#64748b' : '#94a3b8', marginBottom: '16px' }}>
+              Chúng tôi sẽ xem xét và xử lý sớm nhất có thể.
+            </div>
+            <button onClick={onClose} style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', border: 'none', borderRadius: '8px', padding: '8px 20px', color: '#fff', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>
+              Đóng
+            </button>
+          </div>
+        ) : (
+          <>
+            <div style={{ fontSize: '12px', color: isDark ? '#94a3b8' : '#64748b', lineHeight: 1.5 }}>
+              Chọn lý do báo cáo nội dung này. Chúng tôi sẽ xem xét trong vòng 24 giờ.
+            </div>
+
+            {/* Reason selector */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              {REPORT_REASONS.map(r => {
+                const active = reason === r.value
+                return (
+                  <label key={r.value} style={{
+                    display: 'flex', alignItems: 'center', gap: '10px',
+                    padding: '9px 12px', borderRadius: '8px', cursor: 'pointer',
+                    border: `1.5px solid ${active ? '#6366f1' : (isDark ? 'rgba(255,255,255,0.08)' : '#e2e8f0')}`,
+                    background: active ? (isDark ? 'rgba(99,102,241,0.15)' : '#ede9fe') : 'transparent',
+                    transition: 'all 0.12s',
+                  }}>
+                    <input type="radio" name="report_reason" value={r.value}
+                      checked={active} onChange={() => setReason(r.value)}
+                      style={{ accentColor: '#6366f1', flexShrink: 0 }} />
+                    <span style={{ fontSize: '13px', color: active ? '#818cf8' : (isDark ? '#cbd5e1' : '#334155'), fontWeight: active ? 600 : 400 }}>
+                      {r.label}
+                    </span>
+                  </label>
+                )
+              })}
+            </div>
+
+            {/* Optional note */}
+            <div>
+              <label style={{ fontSize: '11px', fontWeight: 600, color: isDark ? '#64748b' : '#94a3b8', display: 'block', marginBottom: '5px' }}>
+                Ghi chú thêm <span style={{ fontWeight: 400 }}>(không bắt buộc)</span>
+              </label>
+              <textarea
+                value={note} onChange={e => setNote(e.target.value)} rows={2}
+                placeholder="Mô tả thêm về vấn đề..."
+                maxLength={500}
+                style={{
+                  width: '100%', resize: 'none',
+                  background: isDark ? 'rgba(0,0,0,0.2)' : '#f8fafc',
+                  border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : '#e2e8f0'}`,
+                  borderRadius: '8px', padding: '8px 10px',
+                  color: isDark ? '#e2e8f0' : '#0f172a',
+                  fontSize: '13px', fontFamily: 'Inter, sans-serif', outline: 'none',
+                }}
+              />
+            </div>
+
+            {err && (
+              <div style={{ fontSize: '12px', color: '#ef4444', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '7px', padding: '7px 10px' }}>
+                {err}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+              <button onClick={onClose} style={{ background: 'transparent', border: `1px solid ${isDark ? 'rgba(255,255,255,0.12)' : '#e2e8f0'}`, borderRadius: '8px', padding: '7px 16px', color: isDark ? '#94a3b8' : '#64748b', fontSize: '13px', cursor: 'pointer' }}>Hủy</button>
+              <button onClick={submit} disabled={loading || !reason} style={{ background: '#ef4444', border: 'none', borderRadius: '8px', padding: '7px 18px', color: '#fff', fontSize: '13px', fontWeight: 600, cursor: 'pointer', opacity: (loading || !reason) ? 0.55 : 1 }}>
+                {loading ? 'Đang gửi…' : '🚩 Gửi báo cáo'}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ─── TagBadge ─────────────────────────────────────────────────────────────────
 
 function TagBadge({ tag, small = false, onClick }: {
@@ -225,16 +366,18 @@ function ReplyBox({ isDark, parentAuthor, onSubmit, onCancel }: {
 
 // ─── CommentItem (recursive — unlimited depth) ────────────────────────────────
 
-function CommentItem({ node, userId, isDark, depth, onReply, onDelete }: {
+function CommentItem({ node, userId, isDark, depth, onReply, onDelete, authFetch }: {
   node: CommentNode
   userId: number
   isDark: boolean
   depth: number
   onReply: (parentId: number, parentAuthor: string, text: string) => Promise<void>
   onDelete: (id: number) => void
+  authFetch: (url: string, options?: RequestInit) => Promise<Response>
 }) {
-  const [childrenOpen, setChildrenOpen] = useState(depth < 2)
-  const [showReplyBox, setShowReplyBox] = useState(false)
+  const [childrenOpen,  setChildrenOpen]  = useState(depth < 2)
+  const [showReplyBox,  setShowReplyBox]  = useState(false)
+  const [showReport,    setShowReport]    = useState(false)
 
   const label      = authorLabel(node.author_name, node.author_email)
   const isMine     = node.user_id === userId
@@ -285,6 +428,15 @@ function CommentItem({ node, userId, isDark, depth, onReply, onDelete }: {
                 {node.children.length} phản hồi
               </button>
             )}
+            {!isMine && (
+              <button
+                onClick={() => setShowReport(true)}
+                title="Báo cáo bình luận này"
+                style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, fontSize: '11px', fontWeight: 500, color: isDark ? '#475569' : '#cbd5e1', display: 'flex', alignItems: 'center', gap: '2px', transition: 'color 0.15s' }}
+                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#ef4444' }}
+                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = isDark ? '#475569' : '#cbd5e1' }}
+              >🚩 Báo cáo</button>
+            )}
           </div>
           {showReplyBox && (
             <ReplyBox
@@ -293,12 +445,18 @@ function CommentItem({ node, userId, isDark, depth, onReply, onDelete }: {
               onCancel={() => setShowReplyBox(false)}
             />
           )}
+          {showReport && (
+            <ReportModal
+              isDark={isDark} targetType="comment" targetId={node.id}
+              authFetch={authFetch} onClose={() => setShowReport(false)}
+            />
+          )}
         </div>
       </div>
       {hasChildren && childrenOpen && (
         <div style={{ marginTop: '6px', borderLeft: `2px solid ${lineColor}`, paddingLeft: '10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
           {node.children.map(child => (
-            <CommentItem key={child.id} node={child} userId={userId} isDark={isDark} depth={depth + 1} onReply={onReply} onDelete={onDelete} />
+            <CommentItem key={child.id} node={child} userId={userId} isDark={isDark} depth={depth + 1} onReply={onReply} onDelete={onDelete} authFetch={authFetch} />
           ))}
         </div>
       )}
@@ -423,6 +581,7 @@ function PostDetail({ postId, userId, isDark, authFetch, onBack, onTagClick }: {
   const [submitting, setSubmitting]   = useState(false)
   const [likeCount, setLikeCount]     = useState(0)
   const [error, setError]       = useState('')
+  const [showReportPost, setShowReportPost] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const loadPost = useCallback(async () => {
@@ -568,7 +727,7 @@ function PostDetail({ postId, userId, isDark, authFetch, onBack, onTagClick }: {
         <div style={{ fontSize: '14px', color: isDark ? '#cbd5e1' : '#334155', lineHeight: 1.75, whiteSpace: 'pre-line', borderTop: `1px solid ${isDark ? 'rgba(255,255,255,0.06)' : '#f1f5f9'}`, paddingTop: '14px' }}>
           {post.content}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
           <button onClick={handleLike} style={{
             background: liked ? (isDark ? 'rgba(239,68,68,0.15)' : '#fff1f2') : (isDark ? 'rgba(255,255,255,0.06)' : '#f8fafc'),
             border: `1px solid ${liked ? '#ef4444' : (isDark ? 'rgba(255,255,255,0.1)' : '#e2e8f0')}`,
@@ -580,7 +739,42 @@ function PostDetail({ postId, userId, isDark, authFetch, onBack, onTagClick }: {
             {liked ? '❤️' : '🤍'} {likeCount}
           </button>
           <span style={{ fontSize: '12px', color: isDark ? '#64748b' : '#94a3b8' }}>💬 {comments.length} bình luận</span>
+          {/* Report post — only for non-owners */}
+          {post.user_id !== userId && (
+            <button
+              onClick={() => setShowReportPost(true)}
+              title="Báo cáo bài viết này"
+              style={{
+                marginLeft: 'auto', background: 'transparent',
+                border: `1px solid ${isDark ? 'rgba(239,68,68,0.2)' : 'rgba(239,68,68,0.2)'}`,
+                borderRadius: '20px', padding: '4px 12px', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', gap: '5px',
+                fontSize: '12px', fontWeight: 500, color: isDark ? '#64748b' : '#94a3b8',
+                transition: 'all 0.15s',
+              }}
+              onMouseEnter={e => {
+                const el = e.currentTarget as HTMLElement
+                el.style.background = 'rgba(239,68,68,0.1)'
+                el.style.color = '#ef4444'
+                el.style.borderColor = '#ef4444'
+              }}
+              onMouseLeave={e => {
+                const el = e.currentTarget as HTMLElement
+                el.style.background = 'transparent'
+                el.style.color = isDark ? '#64748b' : '#94a3b8'
+                el.style.borderColor = isDark ? 'rgba(239,68,68,0.2)' : 'rgba(239,68,68,0.2)'
+              }}
+            >
+              🚩 Báo cáo bài viết
+            </button>
+          )}
         </div>
+        {showReportPost && post && (
+          <ReportModal
+            isDark={isDark} targetType="post" targetId={post.id}
+            authFetch={authFetch} onClose={() => setShowReportPost(false)}
+          />
+        )}
       </div>
 
       {/* Comments */}
@@ -590,7 +784,7 @@ function PostDetail({ postId, userId, isDark, authFetch, onBack, onTagClick }: {
         </h3>
 
         {tree.map(node => (
-          <CommentItem key={node.id} node={node} userId={userId} isDark={isDark} depth={0} onReply={handleReply} onDelete={handleDeleteComment} />
+          <CommentItem key={node.id} node={node} userId={userId} isDark={isDark} depth={0} onReply={handleReply} onDelete={handleDeleteComment} authFetch={authFetch} />
         ))}
 
         {tree.length === 0 && (
