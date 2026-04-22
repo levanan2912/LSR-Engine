@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { User, SessionWithReport, SessionReport, HistoryData } from '../types'
 import ChangePasswordModal from '../components/ChangePasswordModal'
 import ChatBot from '../components/ChatBot'
+import ProgressSummary, { SessionRecord } from '../components/ProgressSummary'
 
 interface Props {
   user: User
@@ -544,7 +545,7 @@ export default function HistoryPage({ user, authFetch, onLogout, onNavigate, cur
   const loadHistory = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await authFetch('/api/entries/history?limit=60')
+      const res = await authFetch('/api/entries/history?limit=120')
       if (res.ok) setHistoryData(await res.json())
     } catch (err) { console.error('History load error:', err) }
     finally { setLoading(false) }
@@ -560,6 +561,23 @@ export default function HistoryPage({ user, authFetch, onLogout, onNavigate, cur
         .sort((a, b) => b.localeCompare(a))
     : []
   const displayName = user.full_name || user.email.split('@')[0]
+
+  // Convert sessions → SessionRecord for ProgressSummary
+  const progressSessions = useMemo<SessionRecord[]>(() => {
+    if (!historyData?.sessions) return []
+    return historyData.sessions.map(s => ({
+      id: s.id,
+      session_date: s.session_date,
+      session_number: s.session_number ?? 1,
+      study_hours: Number(s.study_hours ?? 0),
+      focus_level: s.focus_level ?? 3,
+      distraction_count: s.distraction_count ?? 0,
+      goal_achieved: s.goal_achieved ? 1 : 0,
+      dropout_feeling: s.dropout_feeling ?? 3,
+      emotional_state: s.emotional_state ?? null,
+      report: s.report ? { risk_level: s.report.risk_level } : null,
+    }))
+  }, [historyData])
 
   return (
     <div style={{ minHeight: '100vh', background: isDark ? 'linear-gradient(135deg, #020617 0%, #0f172a 50%, #0d1117 100%)' : 'linear-gradient(135deg, #f1f5f9 0%, #e8edf5 50%, #edf2f8 100%)' }}>
@@ -698,7 +716,39 @@ export default function HistoryPage({ user, authFetch, onLogout, onNavigate, cur
           </div>
         ) : (
           <>
+            {/* ══ Tiến trình học tập ══ */}
+            <div style={{
+              background: isDark ? 'rgba(255,255,255,0.015)' : 'rgba(0,0,0,0.025)',
+              border: isDark ? '1px solid rgba(255,255,255,0.07)' : '1px solid rgba(0,0,0,0.08)',
+              borderRadius: '20px',
+              padding: '28px 28px 24px',
+              marginBottom: '24px',
+              boxShadow: isDark ? '0 4px 32px rgba(0,0,0,0.3)' : '0 4px 20px rgba(0,0,0,0.08)',
+            }}>
+              {/* Section header */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '22px' }}>
+                <div style={{ width: '4px', height: '22px', borderRadius: '2px', background: 'linear-gradient(180deg, #6366f1, #818cf8)' }} />
+                <div>
+                  <h2 style={{ margin: 0, fontFamily: 'Space Grotesk, sans-serif', fontSize: '17px', fontWeight: 700, color: isDark ? 'rgba(255,255,255,0.92)' : '#0f172a', letterSpacing: '-0.2px' }}>
+                    Tiến trình học tập
+                  </h2>
+                  <p style={{ margin: 0, fontSize: '12px', color: isDark ? 'rgba(255,255,255,0.4)' : '#64748b', fontFamily: 'Space Grotesk, sans-serif', marginTop: '2px' }}>
+                    Phân tích ngữ cảnh — không phản ứng thái quá với từng biến động
+                  </p>
+                </div>
+              </div>
+              <ProgressSummary sessions={progressSessions} loading={loading} size="large" />
+            </div>
+
+            {/* ══ Stats bar ══ */}
             <StatsBar data={historyData} />
+
+            {/* ══ Session list ══ */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: '4px 0 16px' }}>
+              <div style={{ width: '4px', height: '18px', borderRadius: '2px', background: 'linear-gradient(180deg, #60a5fa, #818cf8)' }} />
+              <h2 style={{ margin: 0, fontFamily: 'Space Grotesk, sans-serif', fontSize: '15px', fontWeight: 700, color: isDark ? 'rgba(255,255,255,0.85)' : '#0f172a' }}>Nhật ký phên học</h2>
+              <span style={{ fontSize: '12px', color: isDark ? 'rgba(255,255,255,0.3)' : '#94a3b8', fontFamily: 'Space Grotesk, sans-serif' }}>{historyData.total_sessions} phiên · {historyData.total_days} ngày</span>
+            </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               {dates.map((date, idx) => (
                 <DayGroup

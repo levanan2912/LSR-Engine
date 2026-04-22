@@ -1,12 +1,12 @@
 /**
  * ProgressSummary — Bảng tổng hợp tiến trình học tập theo chuỗi thời gian
  *
- * Logic cốt lõi:
- *  - Baseline cá nhân: trung bình lịch sử ≥7 phiên
- *  - Phát hiện ngoại lệ: phiên lệch >1.5σ so với baseline nhưng không lặp lại → đánh dấu "bất thường nhất thời"
- *  - Trend ngắn hạn: 3–7 phiên gần nhất (EMA-weighted)
- *  - Trend dài hạn: tất cả lịch sử theo tuần
- *  - Risk contextual: chỉ nâng cảnh báo khi tín hiệu tiêu cực lặp ≥3 phiên liên tiếp
+ * Logic:
+ *  - Baseline cá nhân: trung bình lịch sử, loại trừ 3 phiên gần nhất
+ *  - Anomaly detection: phiên lệch >1.5σ mà không lặp lại → "ngoại lệ nhất thời"
+ *  - Trend ngắn hạn: 3–7 phiên gần (EMA)
+ *  - Trend dài hạn: theo tuần
+ *  - Cảnh báo chỉ nâng khi tín hiệu tiêu cực lặp ≥3 phiên liên tiếp
  */
 
 import React, { useMemo, useState } from 'react'
@@ -22,496 +22,473 @@ export interface SessionRecord {
   goal_achieved: number   // 0 | 1
   dropout_feeling: number
   emotional_state?: string | null
-  report?: {
-    risk_level: string
-  } | null
+  report?: { risk_level: string } | null
 }
 
 interface Baseline {
-  focus:        number
-  dropout:      number
-  hours:        number
-  distractions: number
-  goalRate:     number   // 0-100
-  stdFocus:     number
-  stdDropout:   number
-  sampleSize:   number
+  focus: number; dropout: number; hours: number
+  distractions: number; goalRate: number
+  stdFocus: number; stdDropout: number; sampleSize: number
 }
-
 interface TrendPoint {
-  label: string
-  focus: number
-  dropout: number
-  hours: number
-  goalRate: number
-  distractions: number
+  label: string; focus: number; dropout: number
+  hours: number; goalRate: number; distractions: number
 }
-
 type TrendDir = 'up' | 'down' | 'stable'
 type RiskContext = 'normal' | 'anomaly' | 'short_decline' | 'sustained_decline' | 'improving'
 
 interface Analysis {
-  baseline:          Baseline | null
-  isAnomaly:         boolean          // phiên mới nhất là ngoại lệ nhất thời
-  anomalyReason:     string
-  shortTrend:        TrendDir         // 3-7 phiên
-  longTrend:         TrendDir         // toàn bộ lịch sử
-  riskContext:       RiskContext
-  consecutiveDecline: number          // số phiên tiêu cực liên tiếp
-  shortPts:          TrendPoint[]
-  weeklyPts:         TrendPoint[]
-  todayVsBaseline:   { focus: number; dropout: number; goalRate: number } | null
-  headline:          string
-  subline:           string
-  badgeColor:        string
-  badgeLabel:        string
+  baseline: Baseline | null
+  isAnomaly: boolean; anomalyReason: string
+  shortTrend: TrendDir; longTrend: TrendDir
+  riskContext: RiskContext; consecutiveDecline: number
+  shortPts: TrendPoint[]; weeklyPts: TrendPoint[]
+  todayVsBaseline: { focus: number; dropout: number; goalRate: number } | null
+  headline: string; subline: string; badgeColor: string; badgeLabel: string
 }
 
-// ─── Utilities ─────────────────────────────────────────────────────────────────
-function mean(arr: number[]): number {
-  return arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : 0
-}
-function std(arr: number[], m?: number): number {
-  const mu = m ?? mean(arr)
-  return arr.length > 1
-    ? Math.sqrt(arr.reduce((s, v) => s + (v - mu) ** 2, 0) / (arr.length - 1))
-    : 0
-}
-/** Exponential moving average — more weight on recent values */
-function ema(arr: number[], alpha = 0.3): number {
-  if (!arr.length) return 0
-  return arr.reduce((s, v) => alpha * v + (1 - alpha) * s)
+// ─── Math helpers ───────────────────────────────────────────────────────────────
+const mean = (a: number[]) => a.length ? a.reduce((s, v) => s + v, 0) / a.length : 0
+const std  = (a: number[], m?: number) => {
+  const mu = m ?? mean(a)
+  return a.length > 1 ? Math.sqrt(a.reduce((s, v) => s + (v - mu) ** 2, 0) / (a.length - 1)) : 0
 }
 function trendDir(recent: number[], older: number[]): TrendDir {
-  const r = mean(recent), o = mean(older)
-  const delta = r - o
-  const threshold = Math.max(0.15, o * 0.08)
-  if (delta > threshold) return 'up'
-  if (delta < -threshold) return 'down'
-  return 'stable'
+  const r = mean(recent), o = mean(older), delta = r - o
+  const threshold = Math.max(0.15, Math.abs(o) * 0.08)
+  return delta > threshold ? 'up' : delta < -threshold ? 'down' : 'stable'
 }
-function getWeekKey(iso: string): string {
+function getWeekKey(iso: string) {
   const d = new Date(iso + 'T00:00:00')
   const jan1 = new Date(d.getFullYear(), 0, 1)
-  const week = Math.ceil(((d.getTime() - jan1.getTime()) / 86400000 + jan1.getDay() + 1) / 7)
-  return `T${week}`
-}
-function fmtDate(iso: string): string {
-  try { const d = new Date(iso + 'T00:00:00'); return `${d.getDate()}/${d.getMonth() + 1}` }
-  catch { return iso }
+  const w = Math.ceil(((d.getTime() - jan1.getTime()) / 86400000 + jan1.getDay() + 1) / 7)
+  return `T${w}/${d.getFullYear().toString().slice(-2)}`
 }
 
-// ─── Core Analysis Engine ───────────────────────────────────────────────────────
+// ─── Core analysis engine ───────────────────────────────────────────────────────
 function analyzeProgress(sessions: SessionRecord[]): Analysis | null {
-  if (sessions.length === 0) return null
-
-  // Sort oldest → newest
+  if (!sessions.length) return null
   const asc = [...sessions].sort((a, b) => {
     const d = a.session_date.localeCompare(b.session_date)
     return d !== 0 ? d : (a.session_number ?? 0) - (b.session_number ?? 0)
   })
-
   const n = asc.length
   const latest = asc[n - 1]
 
-  // ── 1. Baseline (dùng tất cả trừ 3 phiên mới nhất, tối thiểu 5 phiên) ────
+  // 1. Baseline (loại 3 phiên gần nhất, cần ≥7)
   let baseline: Baseline | null = null
   if (n >= 7) {
-    const basePool = asc.slice(0, n - 3)     // loại 3 phiên gần nhất khỏi baseline
-    const focusArr     = basePool.map(s => s.focus_level)
-    const dropoutArr   = basePool.map(s => s.dropout_feeling)
-    const hoursArr     = basePool.map(s => Number(s.study_hours))
-    const distrArr     = basePool.map(s => s.distraction_count ?? 0)
-    const goalArr      = basePool.map(s => (s.goal_achieved ? 100 : 0))
-    const mFocus   = mean(focusArr)
-    const mDropout = mean(dropoutArr)
+    const pool = asc.slice(0, n - 3)
+    const fa = pool.map(s => s.focus_level), da = pool.map(s => s.dropout_feeling)
+    const mf = mean(fa), md = mean(da)
     baseline = {
-      focus:        mFocus,
-      dropout:      mDropout,
-      hours:        mean(hoursArr),
-      distractions: mean(distrArr),
-      goalRate:     mean(goalArr),
-      stdFocus:     std(focusArr, mFocus),
-      stdDropout:   std(dropoutArr, mDropout),
-      sampleSize:   basePool.length,
+      focus: mf, dropout: md,
+      hours: mean(pool.map(s => Number(s.study_hours))),
+      distractions: mean(pool.map(s => s.distraction_count ?? 0)),
+      goalRate: mean(pool.map(s => s.goal_achieved ? 100 : 0)),
+      stdFocus: std(fa, mf), stdDropout: std(da, md),
+      sampleSize: pool.length,
     }
   }
 
-  // ── 2. Anomaly detection (phiên mới nhất) ─────────────────────────────────
-  let isAnomaly = false
-  let anomalyReason = ''
-
+  // 2. Anomaly detection
+  let isAnomaly = false, anomalyReason = ''
   if (baseline && n >= 7) {
-    const focusDelta   = baseline.focus - latest.focus_level    // positive = drop
-    const dropoutDelta = latest.dropout_feeling - baseline.dropout  // positive = rise
-    const sigmaF = Math.max(baseline.stdFocus, 0.3)
-    const sigmaD = Math.max(baseline.stdDropout, 0.3)
-
-    const focusOutlier   = focusDelta   > sigmaF * 1.5
-    const dropoutOutlier = dropoutDelta > sigmaD * 1.5
-
-    if (focusOutlier || dropoutOutlier) {
-      // Check if the dip appeared in previous 2 sessions too (pattern vs one-off)
-      const prev2 = asc.slice(-3, -1)
-      const prev2FocusAvg = mean(prev2.map(s => s.focus_level))
-      const alreadyLow = prev2FocusAvg < baseline.focus - sigmaF * 0.8
-
-      if (!alreadyLow) {
+    const sf = Math.max(baseline.stdFocus, 0.3), sd = Math.max(baseline.stdDropout, 0.3)
+    const fDrop = baseline.focus - latest.focus_level
+    const dRise = latest.dropout_feeling - baseline.dropout
+    if (fDrop > sf * 1.5 || dRise > sd * 1.5) {
+      const prev2avgFocus = mean(asc.slice(-3, -1).map(s => s.focus_level))
+      if (prev2avgFocus >= baseline.focus - sf * 0.8) {
         isAnomaly = true
-        const reasons: string[] = []
-        if (focusOutlier)   reasons.push(`tập trung giảm mạnh (${latest.focus_level.toFixed(1)} vs TB ${baseline.focus.toFixed(1)})`)
-        if (dropoutOutlier) reasons.push(`bỏ cuộc tăng đột biến (${latest.dropout_feeling}/5)`)
-        anomalyReason = reasons.join(', ')
+        const r: string[] = []
+        if (fDrop > sf * 1.5) r.push(`tập trung giảm mạnh (${latest.focus_level.toFixed(1)} vs TB ${baseline.focus.toFixed(1)})`)
+        if (dRise > sd * 1.5) r.push(`cảm giác bỏ cuộc tăng đột biến (${latest.dropout_feeling}/5)`)
+        anomalyReason = r.join(', ')
       }
     }
   }
 
-  // ── 3. Consecutive decline (số phiên tiêu cực liên tiếp) ─────────────────
+  // 3. Consecutive decline
   let consecutiveDecline = 0
   if (n >= 3) {
-    const refFocus = baseline?.focus ?? mean(asc.slice(0, Math.max(1, n - 5)).map(s => s.focus_level))
+    const ref = baseline?.focus ?? mean(asc.slice(0, Math.max(1, n - 5)).map(s => s.focus_level))
     for (let i = n - 1; i >= 0; i--) {
-      const isBad = asc[i].focus_level < refFocus - 0.5 || asc[i].dropout_feeling >= 3.5
-      if (isBad) consecutiveDecline++
+      if (asc[i].focus_level < ref - 0.5 || asc[i].dropout_feeling >= 3.5) consecutiveDecline++
       else break
     }
   }
 
-  // ── 4. Short-term trend (3-7 phiên) ──────────────────────────────────────
-  const shortSlice  = asc.slice(-Math.min(7, n))
-  const shortHalf   = Math.floor(shortSlice.length / 2)
-  const shortRecent = shortSlice.slice(shortHalf).map(s => s.focus_level)
-  const shortOlder  = shortSlice.slice(0, shortHalf).map(s => s.focus_level)
-  const shortTrend  = shortOlder.length >= 1 ? trendDir(shortRecent, shortOlder) : 'stable'
+  // 4. Short-term trend (3–7 phiên)
+  const sSlice = asc.slice(-Math.min(7, n))
+  const sH = Math.floor(sSlice.length / 2)
+  const shortTrend = sH >= 1
+    ? trendDir(sSlice.slice(sH).map(s => s.focus_level), sSlice.slice(0, sH).map(s => s.focus_level))
+    : 'stable'
 
-  // ── 5. Long-term trend (weekly aggregation) ───────────────────────────────
-  const weekGroups: Record<string, SessionRecord[]> = {}
-  asc.forEach(s => {
-    const k = getWeekKey(s.session_date)
-    if (!weekGroups[k]) weekGroups[k] = []
-    weekGroups[k].push(s)
-  })
-  const weekKeys    = Object.keys(weekGroups)
-  const weeklyPts: TrendPoint[] = weekKeys.map(k => {
-    const g = weekGroups[k]
-    return {
-      label:        k,
-      focus:        mean(g.map(s => s.focus_level)),
-      dropout:      mean(g.map(s => s.dropout_feeling)),
-      hours:        mean(g.map(s => Number(s.study_hours))),
-      goalRate:     mean(g.map(s => s.goal_achieved ? 100 : 0)),
-      distractions: mean(g.map(s => s.distraction_count ?? 0)),
-    }
-  })
-  const longHalf   = Math.floor(weeklyPts.length / 2)
-  const longRecent = weeklyPts.slice(longHalf).map(p => p.focus)
-  const longOlder  = weeklyPts.slice(0, longHalf).map(p => p.focus)
-  const longTrend  = longOlder.length >= 1 ? trendDir(longRecent, longOlder) : 'stable'
+  // 5. Long-term trend (weekly)
+  const wGroups: Record<string, SessionRecord[]> = {}
+  asc.forEach(s => { const k = getWeekKey(s.session_date); (wGroups[k] = wGroups[k] ?? []).push(s) })
+  const weeklyPts: TrendPoint[] = Object.entries(wGroups).map(([k, g]) => ({
+    label: k, focus: mean(g.map(s => s.focus_level)), dropout: mean(g.map(s => s.dropout_feeling)),
+    hours: mean(g.map(s => Number(s.study_hours))),
+    goalRate: mean(g.map(s => s.goal_achieved ? 100 : 0)),
+    distractions: mean(g.map(s => s.distraction_count ?? 0)),
+  }))
+  const lH = Math.floor(weeklyPts.length / 2)
+  const longTrend = lH >= 1
+    ? trendDir(weeklyPts.slice(lH).map(p => p.focus), weeklyPts.slice(0, lH).map(p => p.focus))
+    : 'stable'
 
-  // ── 6. Short-term points (for sparkline) ─────────────────────────────────
-  const shortPts: TrendPoint[] = asc.slice(-10).map((s, i) => ({
-    label:        `P${s.session_number ?? i + 1}`,
-    focus:        s.focus_level,
-    dropout:      s.dropout_feeling,
-    hours:        Number(s.study_hours),
-    goalRate:     s.goal_achieved ? 100 : 0,
+  // 6. Short-term points for sparkline
+  const shortPts: TrendPoint[] = asc.slice(-12).map((s, i) => ({
+    label: `P${s.session_number ?? i + 1}`,
+    focus: s.focus_level, dropout: s.dropout_feeling,
+    hours: Number(s.study_hours), goalRate: s.goal_achieved ? 100 : 0,
     distractions: s.distraction_count ?? 0,
   }))
 
-  // ── 7. Today vs Baseline delta ────────────────────────────────────────────
+  // 7. Today vs baseline
   const todayVsBaseline = baseline ? {
-    focus:   latest.focus_level   - baseline.focus,
+    focus:   latest.focus_level - baseline.focus,
     dropout: latest.dropout_feeling - baseline.dropout,
     goalRate: (latest.goal_achieved ? 100 : 0) - baseline.goalRate,
   } : null
 
-  // ── 8. Risk context (contextual, not reactive) ────────────────────────────
+  // 8. Risk context
   let riskContext: RiskContext = 'normal'
-  if (isAnomaly) {
-    riskContext = 'anomaly'
-  } else if (consecutiveDecline >= 3) {
-    riskContext = 'sustained_decline'
-  } else if (consecutiveDecline >= 2 || shortTrend === 'down') {
-    riskContext = 'short_decline'
-  } else if (shortTrend === 'up' || (longTrend === 'up' && shortTrend !== 'down')) {
-    riskContext = 'improving'
-  }
+  if (isAnomaly) riskContext = 'anomaly'
+  else if (consecutiveDecline >= 3) riskContext = 'sustained_decline'
+  else if (consecutiveDecline >= 2 || shortTrend === 'down') riskContext = 'short_decline'
+  else if (shortTrend === 'up' || (longTrend === 'up' && shortTrend !== 'down')) riskContext = 'improving'
 
-  // ── 9. Headline & badge ───────────────────────────────────────────────────
-  const headlineMap: Record<RiskContext, string> = {
-    anomaly:          `Hôm nay có vẻ là một ngày khó — nhưng đây có thể chỉ là ngoại lệ`,
-    sustained_decline:`${consecutiveDecline} phiên liên tiếp có dấu hiệu giảm sút — cần chú ý`,
-    short_decline:    `Tín hiệu hơi yếu trong vài phiên gần đây, chưa đủ để kết luận`,
-    improving:        `Xu hướng cải thiện rõ — bạn đang đi đúng hướng`,
-    normal:           `Tiến trình ổn định — tiếp tục duy trì nhịp học tập`,
+  const HM: Record<RiskContext, string> = {
+    anomaly:           'Hôm nay có vẻ là một ngày khó — nhưng đây có thể chỉ là ngoại lệ',
+    sustained_decline: `${consecutiveDecline} phiên liên tiếp có dấu hiệu giảm sút — cần chú ý`,
+    short_decline:     'Tín hiệu hơi yếu trong vài phiên gần đây, chưa đủ để kết luận',
+    improving:         'Xu hướng cải thiện rõ — bạn đang đi đúng hướng',
+    normal:            'Tiến trình ổn định — tiếp tục duy trì nhịp học tập',
   }
-  const sublineMap: Record<RiskContext, string> = {
-    anomaly:          `Lịch sử dài hạn của bạn vẫn ${longTrend === 'up' ? 'tốt và đang cải thiện' : longTrend === 'stable' ? 'ổn định' : 'cần theo dõi thêm'}. Hệ thống sẽ không nâng cảnh báo dựa trên một phiên bất thường đơn lẻ.`,
-    sustained_decline:`Khi tín hiệu tiêu cực lặp lại nhiều phiên liên tiếp, đây là thời điểm để xem xét lại chiến lược học tập, không phải tự trách bản thân.`,
-    short_decline:    `Hệ thống cần ít nhất 3 phiên tiêu cực liên tiếp để nâng mức cảnh báo. Hiện tại vẫn đang theo dõi.`,
-    improving:        `Xu hướng ngắn hạn và dài hạn đều cho thấy tiến bộ. Baseline của bạn đang được cập nhật lên.`,
-    normal:           `Các chỉ số trong khoảng bình thường của chính bạn. Không có tín hiệu đáng lo.`,
+  const SM: Record<RiskContext, string> = {
+    anomaly:           `Lịch sử dài hạn của bạn vẫn ${longTrend === 'up' ? 'đang cải thiện' : longTrend === 'stable' ? 'ổn định' : 'cần theo dõi thêm'}. Hệ thống sẽ không nâng cảnh báo dựa trên một phiên bất thường đơn lẻ.`,
+    sustained_decline: 'Khi tín hiệu tiêu cực lặp lại nhiều phiên liên tiếp, đây là thời điểm xem xét lại chiến lược — không phải tự trách bản thân.',
+    short_decline:     'Hệ thống cần ít nhất 3 phiên tiêu cực liên tiếp để nâng mức cảnh báo. Hiện tại vẫn đang theo dõi.',
+    improving:         'Xu hướng ngắn và dài hạn đều cho thấy tiến bộ. Baseline cá nhân đang được cập nhật lên.',
+    normal:            'Các chỉ số trong khoảng bình thường của chính bạn. Không có tín hiệu đáng lo.',
   }
-  const badgeMap: Record<RiskContext, { color: string; label: string }> = {
-    anomaly:          { color: '#f59e0b', label: 'Ngoại lệ nhất thời' },
-    sustained_decline:{ color: '#f87171', label: 'Cần theo dõi' },
-    short_decline:    { color: '#fbbf24', label: 'Hơi chậm lại' },
-    improving:        { color: '#34d399', label: 'Đang cải thiện' },
-    normal:           { color: '#60a5fa', label: 'Ổn định' },
+  const BM: Record<RiskContext, { color: string; label: string }> = {
+    anomaly:           { color: '#f59e0b', label: 'Ngoại lệ nhất thời' },
+    sustained_decline: { color: '#f87171', label: 'Cần theo dõi' },
+    short_decline:     { color: '#fbbf24', label: 'Hơi chậm lại' },
+    improving:         { color: '#34d399', label: 'Đang cải thiện' },
+    normal:            { color: '#60a5fa', label: 'Ổn định' },
   }
 
   return {
-    baseline,
-    isAnomaly,
-    anomalyReason,
-    shortTrend,
-    longTrend,
-    riskContext,
-    consecutiveDecline,
-    shortPts,
-    weeklyPts,
-    todayVsBaseline,
-    headline:   headlineMap[riskContext],
-    subline:    sublineMap[riskContext],
-    badgeColor: badgeMap[riskContext].color,
-    badgeLabel: badgeMap[riskContext].label,
+    baseline, isAnomaly, anomalyReason, shortTrend, longTrend,
+    riskContext, consecutiveDecline, shortPts, weeklyPts, todayVsBaseline,
+    headline: HM[riskContext], subline: SM[riskContext],
+    badgeColor: BM[riskContext].color, badgeLabel: BM[riskContext].label,
   }
 }
 
-// ─── Mini Sparkline ─────────────────────────────────────────────────────────────
+// ─── Sparkline SVG ─────────────────────────────────────────────────────────────
 function Sparkline({
-  pts, valueKey, color, height = 48, showDots = true, highlight = true,
+  pts, valueKey, color, height = 64,
 }: {
   pts: TrendPoint[]
   valueKey: keyof Pick<TrendPoint, 'focus' | 'dropout' | 'hours' | 'goalRate' | 'distractions'>
   color: string
   height?: number
-  showDots?: boolean
-  highlight?: boolean   // highlight last point
 }) {
-  if (pts.length < 2) return null
+  if (pts.length < 2) return (
+    <div style={{ height: `${height}px`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.2)', fontFamily: 'Space Grotesk, sans-serif' }}>Chưa đủ dữ liệu</span>
+    </div>
+  )
   const vals = pts.map(p => p[valueKey] as number)
-  const min = Math.min(...vals)
-  const max = Math.max(...vals, min + 0.01)
-  const W = 200, H = height, padX = 6, padY = 4
-  const toX = (i: number) => padX + (i / (pts.length - 1)) * (W - padX * 2)
-  const toY = (v: number) => padY + (1 - (v - min) / (max - min)) * (H - padY * 2)
-  const pathD = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${toX(i)} ${toY(p[valueKey] as number)}`).join(' ')
-  const areaD = `${pathD} L ${toX(pts.length - 1)} ${H} L ${toX(0)} ${H} Z`
-  const gradId = `spk-${valueKey}-${color.replace('#', '')}`
-  const last = pts[pts.length - 1]
-  const lastY = toY(last[valueKey] as number)
-  const lastX = toX(pts.length - 1)
+  const min = Math.min(...vals), max = Math.max(...vals, min + 0.01)
+  const W = 300, H = height, px = 8, py = 6
+  const tx = (i: number) => px + (i / (pts.length - 1)) * (W - px * 2)
+  const ty = (v: number) => py + (1 - (v - min) / (max - min)) * (H - py * 2)
+  const path = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${tx(i)} ${ty(p[valueKey] as number)}`).join(' ')
+  const area = `${path} L ${tx(pts.length - 1)} ${H} L ${tx(0)} ${H} Z`
+  const gid = `spk${valueKey}${color.replace(/[^a-z0-9]/gi, '')}`
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: `${height}px`, overflow: 'visible' }} aria-hidden="true">
+    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: `${height}px`, overflow: 'visible' }} aria-hidden>
       <defs>
-        <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+        <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor={color} stopOpacity="0.35" />
           <stop offset="100%" stopColor={color} stopOpacity="0.02" />
         </linearGradient>
       </defs>
-      <path d={areaD} fill={`url(#${gradId})`} />
-      <path d={pathD} fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-      {showDots && pts.map((p, i) => (
-        <circle key={i} cx={toX(i)} cy={toY(p[valueKey] as number)}
-          r={highlight && i === pts.length - 1 ? 4.5 : 2}
-          fill={highlight && i === pts.length - 1 ? color : `${color}88`}
-          stroke={highlight && i === pts.length - 1 ? '#080f26' : 'none'}
+      {/* Grid lines */}
+      {[0, 0.5, 1].map(f => (
+        <line key={f} x1={px} y1={py + f * (H - py * 2)} x2={W - px} y2={py + f * (H - py * 2)}
+          stroke="rgba(255,255,255,0.04)" strokeWidth="1" />
+      ))}
+      <path d={area} fill={`url(#${gid})`} />
+      <path d={path} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      {pts.map((p, i) => (
+        <circle key={i} cx={tx(i)} cy={ty(p[valueKey] as number)}
+          r={i === pts.length - 1 ? 5 : 2.5}
+          fill={i === pts.length - 1 ? color : `${color}77`}
+          stroke={i === pts.length - 1 ? '#080f26' : 'none'}
           strokeWidth="1.5"
         />
       ))}
+      {/* Latest value label */}
+      {pts.length > 0 && (() => {
+        const lv = pts[pts.length - 1][valueKey] as number
+        const lx = tx(pts.length - 1), ly = ty(lv)
+        return (
+          <text x={lx - 4} y={ly - 10} textAnchor="end"
+            fill={color} fontSize="10" fontFamily="JetBrains Mono, monospace" fontWeight="700">
+            {lv % 1 === 0 ? lv : lv.toFixed(1)}
+          </text>
+        )
+      })()}
     </svg>
   )
 }
 
-// ─── Delta Badge ────────────────────────────────────────────────────────────────
+// ─── Delta badge ────────────────────────────────────────────────────────────────
 function Delta({ val, inverse = false, suffix = '' }: { val: number; inverse?: boolean; suffix?: string }) {
-  if (Math.abs(val) < 0.05) return <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: '11px', fontFamily: 'JetBrains Mono, monospace' }}>±0</span>
-  const positive = inverse ? val < 0 : val > 0
-  const color = positive ? '#34d399' : '#f87171'
-  const sign = val > 0 ? '+' : ''
-  const display = val % 1 === 0 ? val.toFixed(0) : val.toFixed(1)
+  if (Math.abs(val) < 0.05) return <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: '12px', fontFamily: 'JetBrains Mono' }}>±0{suffix}</span>
+  const pos = inverse ? val < 0 : val > 0
+  const color = pos ? '#34d399' : '#f87171'
+  return <span style={{ color, fontSize: '12px', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}>{val > 0 ? '+' : ''}{val % 1 === 0 ? val.toFixed(0) : val.toFixed(1)}{suffix}</span>
+}
+
+// ─── Trend icon ─────────────────────────────────────────────────────────────────
+function TrendIcon({ dir, focusKey = true }: { dir: TrendDir; focusKey?: boolean }) {
+  // For focus/goal: up=good(green), down=bad(red)
+  // For dropout/distractions: up=bad(red), down=good(green)
+  const color = dir === 'stable' ? '#64748b'
+    : (dir === 'up') === focusKey ? '#34d399' : '#f87171'
+  const icon = dir === 'up' ? '↗' : dir === 'down' ? '↘' : '→'
+  return <span style={{ color, fontSize: '18px', fontWeight: 800, fontFamily: 'JetBrains Mono, monospace', lineHeight: 1 }}>{icon}</span>
+}
+
+// ─── Metric row (for today column) ─────────────────────────────────────────────
+function MetricRow({ label, value, color, delta, inverseDelta }: {
+  label: string; value: string; color: string; delta?: number; inverseDelta?: boolean
+}) {
   return (
-    <span style={{ color, fontSize: '11px', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}>
-      {sign}{display}{suffix}
-    </span>
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+      <span style={{ fontSize: '13px', color: 'rgba(255,255,255,0.5)', fontFamily: 'Space Grotesk, sans-serif' }}>{label}</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        {delta !== undefined && <Delta val={delta} inverse={inverseDelta} />}
+        <span style={{ fontSize: '16px', fontWeight: 800, color, fontFamily: 'JetBrains Mono, monospace' }}>{value}</span>
+      </div>
+    </div>
   )
 }
 
-// ─── Trend Icon ─────────────────────────────────────────────────────────────────
-function TrendIcon({ dir, color }: { dir: 'up' | 'down' | 'stable'; color?: string }) {
-  const cfg = {
-    up:     { icon: '↗', color: color ?? '#34d399' },
-    down:   { icon: '↘', color: color ?? '#f87171' },
-    stable: { icon: '→', color: color ?? '#64748b' },
-  }
-  const c = cfg[dir]
-  return <span style={{ color: c.color, fontSize: '14px', fontWeight: 700, fontFamily: 'JetBrains Mono, monospace' }}>{c.icon}</span>
-}
-
-// ─── Progress Summary Component ─────────────────────────────────────────────────
+// ─── Main component ─────────────────────────────────────────────────────────────
 interface ProgressSummaryProps {
   sessions: SessionRecord[]
   loading?: boolean
+  size?: 'normal' | 'large'   // 'large' for HistoryPage
 }
 
-export default function ProgressSummary({ sessions, loading = false }: ProgressSummaryProps) {
+export default function ProgressSummary({ sessions, loading = false, size = 'normal' }: ProgressSummaryProps) {
   const [expanded, setExpanded] = useState<'short' | 'long' | 'baseline' | null>(null)
+  const lg = size === 'large'
 
   const analysis = useMemo(() => analyzeProgress(sessions), [sessions])
 
-  if (loading) {
-    return (
-      <div style={{ padding: '20px', textAlign: 'center' }}>
-        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', color: 'rgba(255,255,255,0.3)', fontFamily: 'Space Grotesk, sans-serif', fontSize: '12px' }}>
-          <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#6366f1', animation: 'spkPulse 1s infinite' }} />
-          Đang phân tích tiến trình…
-        </div>
+  if (loading) return (
+    <div style={{ padding: lg ? '28px' : '20px', textAlign: 'center' }}>
+      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', color: 'rgba(255,255,255,0.3)', fontFamily: 'Space Grotesk, sans-serif', fontSize: lg ? '14px' : '12px' }}>
+        <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#6366f1', animation: 'psPulse 1s infinite' }} />
+        Đang phân tích tiến trình…
       </div>
-    )
-  }
-  if (!analysis) {
-    return (
-      <div style={{ padding: '20px 0', textAlign: 'center', color: 'rgba(255,255,255,0.2)', fontFamily: 'Space Grotesk, sans-serif', fontSize: '12px' }}>
-        Cần ít nhất 3 phiên để phân tích tiến trình.
-      </div>
-    )
-  }
+    </div>
+  )
+
+  if (!analysis) return (
+    <div style={{ padding: lg ? '24px' : '16px', textAlign: 'center', color: 'rgba(255,255,255,0.2)', fontFamily: 'Space Grotesk, sans-serif', fontSize: lg ? '14px' : '12px' }}>
+      Cần ít nhất 3 phiên để phân tích tiến trình.
+    </div>
+  )
 
   const { baseline, isAnomaly, anomalyReason, shortTrend, longTrend, riskContext,
           consecutiveDecline, shortPts, weeklyPts, todayVsBaseline,
           headline, subline, badgeColor, badgeLabel } = analysis
 
   const n = sessions.length
-  const latest = sessions.length > 0
-    ? [...sessions].sort((a, b) => b.session_date.localeCompare(a.session_date) || (b.session_number ?? 0) - (a.session_number ?? 0))[0]
-    : null
+  const latest = [...sessions].sort((a, b) =>
+    b.session_date.localeCompare(a.session_date) || (b.session_number ?? 0) - (a.session_number ?? 0)
+  )[0]
 
-  // Color helpers
   const shortColor = shortTrend === 'up' ? '#34d399' : shortTrend === 'down' ? '#f87171' : '#64748b'
   const longColor  = longTrend  === 'up' ? '#34d399' : longTrend  === 'down' ? '#f87171' : '#64748b'
 
   return (
     <div style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
 
-      {/* ── Header card ── */}
+      {/* ══ Header status card ══ */}
       <div style={{
-        background: `linear-gradient(135deg, ${badgeColor}14 0%, rgba(255,255,255,0.02) 100%)`,
-        border: `1px solid ${badgeColor}30`,
-        borderLeft: `3px solid ${badgeColor}`,
-        borderRadius: '14px',
-        padding: '16px 18px',
-        marginBottom: '10px',
+        background: `linear-gradient(135deg, ${badgeColor}12 0%, rgba(255,255,255,0.02) 100%)`,
+        border: `1px solid ${badgeColor}35`,
+        borderLeft: `4px solid ${badgeColor}`,
+        borderRadius: lg ? '18px' : '14px',
+        padding: lg ? '24px 28px' : '16px 18px',
+        marginBottom: lg ? '14px' : '10px',
+        position: 'relative', overflow: 'hidden',
       }}>
-        {/* Badge + headline */}
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: '10px' }}>
+        {/* Background glow */}
+        <div style={{ position: 'absolute', top: '-40px', right: '-40px', width: '180px', height: '180px', borderRadius: '50%', background: `radial-gradient(circle, ${badgeColor}0d 0%, transparent 70%)`, pointerEvents: 'none' }} />
+
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap', marginBottom: '12px' }}>
           <div style={{ flex: 1, minWidth: '200px' }}>
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '3px 10px', background: `${badgeColor}20`, border: `1px solid ${badgeColor}40`, borderRadius: '12px', marginBottom: '8px' }}>
-              <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: badgeColor, boxShadow: `0 0 6px ${badgeColor}` }} />
-              <span style={{ fontSize: '10.5px', fontWeight: 700, color: badgeColor, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{badgeLabel}</span>
+            {/* Badge pill */}
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', padding: lg ? '5px 14px' : '3px 10px', background: `${badgeColor}1e`, border: `1px solid ${badgeColor}45`, borderRadius: '14px', marginBottom: lg ? '12px' : '8px' }}>
+              <div style={{ width: lg ? '8px' : '6px', height: lg ? '8px' : '6px', borderRadius: '50%', background: badgeColor, boxShadow: `0 0 8px ${badgeColor}` }} />
+              <span style={{ fontSize: lg ? '12px' : '10.5px', fontWeight: 700, color: badgeColor, textTransform: 'uppercase', letterSpacing: '0.6px' }}>{badgeLabel}</span>
             </div>
-            <p style={{ margin: 0, fontSize: '13.5px', fontWeight: 700, color: 'rgba(255,255,255,0.92)', lineHeight: 1.5 }}>{headline}</p>
+            {/* Headline */}
+            <p style={{ margin: 0, fontSize: lg ? '18px' : '13.5px', fontWeight: 700, color: 'rgba(255,255,255,0.94)', lineHeight: 1.4, letterSpacing: '-0.2px' }}>{headline}</p>
           </div>
           {/* Session count */}
           <div style={{ textAlign: 'right', flexShrink: 0 }}>
-            <div style={{ fontSize: '22px', fontWeight: 800, color: badgeColor, fontFamily: 'JetBrains Mono, monospace', lineHeight: 1 }}>{n}</div>
-            <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.3)', marginTop: '2px' }}>phiên học</div>
+            <div style={{ fontSize: lg ? '36px' : '24px', fontWeight: 800, color: badgeColor, fontFamily: 'JetBrains Mono, monospace', lineHeight: 1 }}>{n}</div>
+            <div style={{ fontSize: lg ? '12px' : '10px', color: 'rgba(255,255,255,0.3)', marginTop: '3px' }}>phiên học</div>
           </div>
         </div>
-        <p style={{ margin: 0, fontSize: '12px', color: 'rgba(255,255,255,0.55)', lineHeight: 1.65 }}>{subline}</p>
+
+        {/* Subline */}
+        <p style={{ margin: 0, fontSize: lg ? '14px' : '12px', color: 'rgba(255,255,255,0.58)', lineHeight: 1.7 }}>{subline}</p>
 
         {/* Anomaly callout */}
         {isAnomaly && anomalyReason && (
-          <div style={{ marginTop: '10px', padding: '8px 12px', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: '8px', display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
-            <span style={{ fontSize: '13px', flexShrink: 0 }}>⚡</span>
-            <p style={{ margin: 0, fontSize: '11.5px', color: 'rgba(255,255,255,0.65)', lineHeight: 1.55 }}>
-              <strong style={{ color: '#fbbf24' }}>Phiên này khác với lịch sử của bạn:</strong> {anomalyReason}. Hệ thống đánh dấu là <em>ngoại lệ nhất thời</em> và sẽ không tính vào đánh giá xu hướng cho đến khi tín hiệu lặp lại.
+          <div style={{ marginTop: lg ? '16px' : '10px', padding: lg ? '14px 16px' : '8px 12px', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.22)', borderRadius: '10px', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+            <span style={{ fontSize: lg ? '16px' : '13px', flexShrink: 0 }}>⚡</span>
+            <p style={{ margin: 0, fontSize: lg ? '13px' : '11.5px', color: 'rgba(255,255,255,0.7)', lineHeight: 1.6 }}>
+              <strong style={{ color: '#fbbf24' }}>Phiên này khác với lịch sử của bạn:</strong> {anomalyReason}. Hệ thống đánh dấu là <em>ngoại lệ nhất thời</em> và không tính vào xu hướng cho đến khi tín hiệu lặp lại.
             </p>
           </div>
         )}
 
         {/* Consecutive decline warning */}
         {consecutiveDecline >= 3 && !isAnomaly && (
-          <div style={{ marginTop: '10px', padding: '8px 12px', background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.2)', borderRadius: '8px', display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
-            <span style={{ fontSize: '13px', flexShrink: 0 }}>🔴</span>
-            <p style={{ margin: 0, fontSize: '11.5px', color: 'rgba(255,255,255,0.65)', lineHeight: 1.55 }}>
-              <strong style={{ color: '#f87171' }}>{consecutiveDecline} phiên liên tiếp</strong> có chỉ số dưới baseline cá nhân — đây là tín hiệu thực sự, không phải ngẫu nhiên. Xem xét báo cáo AI để biết hướng can thiệp.
+          <div style={{ marginTop: lg ? '16px' : '10px', padding: lg ? '14px 16px' : '8px 12px', background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.22)', borderRadius: '10px', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+            <span style={{ fontSize: lg ? '16px' : '13px', flexShrink: 0 }}>🔴</span>
+            <p style={{ margin: 0, fontSize: lg ? '13px' : '11.5px', color: 'rgba(255,255,255,0.7)', lineHeight: 1.6 }}>
+              <strong style={{ color: '#f87171' }}>{consecutiveDecline} phiên liên tiếp</strong> có chỉ số dưới baseline cá nhân — tín hiệu thực sự, không phải ngẫu nhiên. Xem báo cáo AI để biết hướng can thiệp.
             </p>
           </div>
         )}
       </div>
 
-      {/* ── Three columns: hôm nay / ngắn hạn / dài hạn ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '10px' }}>
+      {/* ══ Three panels: Hôm nay / Ngắn hạn / Dài hạn ══ */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: lg ? '12px' : '8px', marginBottom: lg ? '14px' : '10px' }}>
 
-        {/* Hôm nay */}
-        <div style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px', padding: '12px 14px' }}>
-          <div style={{ fontSize: '10px', fontWeight: 700, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '10px' }}>📸 Hôm nay</div>
+        {/* ── Hôm nay ── */}
+        <div style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: lg ? '16px' : '12px', padding: lg ? '20px 22px' : '12px 14px' }}>
+          <div style={{ fontSize: lg ? '11px' : '10px', fontWeight: 700, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: lg ? '14px' : '10px' }}>📸 Ảnh chụp hôm nay</div>
           {latest ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              {[
-                { label: 'Tập trung', val: latest.focus_level.toFixed(1), sub: '/5', color: '#60a5fa' },
-                { label: 'Bỏ cuộc', val: latest.dropout_feeling.toFixed(1), sub: '/5', color: '#f87171' },
-                { label: 'Giờ học', val: Number(latest.study_hours).toFixed(1), sub: 'h', color: '#34d399' },
-                { label: 'Xao nhãng', val: String(latest.distraction_count ?? 0), sub: ' lần', color: '#f59e0b' },
-              ].map(({ label, val, sub, color }) => (
-                <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.45)' }}>{label}</span>
-                  <span style={{ fontSize: '12.5px', fontWeight: 700, color, fontFamily: 'JetBrains Mono, monospace' }}>{val}<span style={{ fontSize: '9.5px', fontWeight: 400, color: 'rgba(255,255,255,0.3)' }}>{sub}</span></span>
-                </div>
-              ))}
-              {todayVsBaseline && (
-                <div style={{ marginTop: '4px', paddingTop: '8px', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-                  <div style={{ fontSize: '9px', color: 'rgba(255,255,255,0.25)', marginBottom: '4px' }}>vs baseline cá nhân</div>
-                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
-                      <span style={{ fontSize: '9.5px', color: 'rgba(255,255,255,0.35)' }}>Focus</span>
-                      <Delta val={todayVsBaseline.focus} suffix="/5" />
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
-                      <span style={{ fontSize: '9.5px', color: 'rgba(255,255,255,0.35)' }}>Dropout</span>
-                      <Delta val={todayVsBaseline.dropout} inverse suffix="/5" />
-                    </div>
+            <>
+              <MetricRow label="Tập trung" value={`${latest.focus_level}/5`} color="#60a5fa" delta={todayVsBaseline?.focus} />
+              <MetricRow label="Cảm giác bỏ cuộc" value={`${latest.dropout_feeling}/5`} color="#f87171" delta={todayVsBaseline?.dropout} inverseDelta />
+              <MetricRow label="Giờ học" value={`${Number(latest.study_hours).toFixed(1)}h`} color="#34d399" />
+              <MetricRow label="Xao nhãng" value={`${latest.distraction_count ?? 0} lần`} color="#f59e0b" />
+              <div style={{ padding: '8px 0 0' }}>
+                <span style={{ fontSize: lg ? '13px' : '11.5px', color: latest.goal_achieved ? '#22c55e' : '#ef4444', fontWeight: 600 }}>
+                  {latest.goal_achieved ? '✅ Đạt mục tiêu' : '❌ Chưa đạt mục tiêu'}
+                </span>
+              </div>
+              {baseline && (
+                <div style={{ marginTop: lg ? '14px' : '10px', padding: lg ? '10px 12px' : '8px 10px', background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.12)', borderRadius: '8px' }}>
+                  <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.3)', marginBottom: '4px' }}>vs baseline cá nhân</div>
+                  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                    {todayVsBaseline && <>
+                      <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                        <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)' }}>Focus</span>
+                        <Delta val={todayVsBaseline.focus} suffix="/5" />
+                      </div>
+                      <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                        <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)' }}>Dropout</span>
+                        <Delta val={todayVsBaseline.dropout} inverse suffix="/5" />
+                      </div>
+                      <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                        <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)' }}>Mục tiêu</span>
+                        <Delta val={todayVsBaseline.goalRate} suffix="%" />
+                      </div>
+                    </>}
                   </div>
                 </div>
               )}
-            </div>
-          ) : (
-            <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.2)' }}>Chưa có dữ liệu</span>
-          )}
+            </>
+          ) : <span style={{ fontSize: '13px', color: 'rgba(255,255,255,0.2)' }}>Chưa có dữ liệu</span>}
         </div>
 
-        {/* Ngắn hạn */}
+        {/* ── Ngắn hạn (3-7 phiên) ── */}
         <div
           onClick={() => setExpanded(e => e === 'short' ? null : 'short')}
-          style={{ background: 'rgba(255,255,255,0.025)', border: `1px solid ${expanded === 'short' ? shortColor + '50' : 'rgba(255,255,255,0.06)'}`, borderRadius: '12px', padding: '12px 14px', cursor: 'pointer', transition: 'border-color 0.2s' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-            <div style={{ fontSize: '10px', fontWeight: 700, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>📈 3–7 phiên</div>
-            <TrendIcon dir={shortTrend} color={shortColor} />
+          style={{ background: 'rgba(255,255,255,0.025)', border: `1px solid ${expanded === 'short' ? shortColor + '55' : 'rgba(255,255,255,0.07)'}`, borderRadius: lg ? '16px' : '12px', padding: lg ? '20px 22px' : '12px 14px', cursor: 'pointer', transition: 'border-color 0.2s' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: lg ? '6px' : '4px' }}>
+            <div style={{ fontSize: lg ? '11px' : '10px', fontWeight: 700, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>📈 3–7 phiên gần đây</div>
+            <TrendIcon dir={shortTrend} />
           </div>
-          <Sparkline pts={shortPts} valueKey="focus" color={shortColor} height={44} />
-          <div style={{ marginTop: '6px', fontSize: '10.5px', color: 'rgba(255,255,255,0.4)', lineHeight: 1.5 }}>
+          <div style={{ fontSize: lg ? '12px' : '10.5px', color: 'rgba(255,255,255,0.4)', marginBottom: lg ? '14px' : '10px' }}>
             Tập trung {shortTrend === 'up' ? '↑ cải thiện' : shortTrend === 'down' ? '↓ giảm nhẹ' : '→ ổn định'} · {shortPts.length} phiên
           </div>
-          {expanded === 'short' && (
-            <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-              {[
-                { label: 'Tập trung', key: 'focus' as const, color: '#60a5fa' },
-                { label: 'Bỏ cuộc',  key: 'dropout' as const, color: '#f87171' },
-                { label: 'Hoàn thành', key: 'goalRate' as const, color: '#34d399' },
-              ].map(({ label, key, color }) => {
-                const vals = shortPts.map(p => p[key])
-                const avg  = mean(vals)
-                const first3 = vals.slice(0, Math.ceil(vals.length / 2))
-                const last3  = vals.slice(Math.floor(vals.length / 2))
-                const dir = trendDir(last3, first3)
+          <Sparkline pts={shortPts} valueKey="focus" color={shortColor} height={lg ? 80 : 52} />
+
+          {/* Mini multi-metric summary */}
+          <div style={{ marginTop: lg ? '14px' : '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            {([
+              { label: 'Focus TB', key: 'focus' as const, color: '#60a5fa', good: true },
+              { label: 'Dropout TB', key: 'dropout' as const, color: '#f87171', good: false },
+              { label: 'Mục tiêu', key: 'goalRate' as const, color: '#34d399', good: true },
+            ] as const).map(({ label, key, color, good }) => {
+              const vals = shortPts.map(p => p[key])
+              const avg = vals.reduce((s, v) => s + v, 0) / (vals.length || 1)
+              const h = vals.length
+              const dir = h >= 4 ? trendDir(vals.slice(Math.floor(h / 2)), vals.slice(0, Math.floor(h / 2))) : 'stable' as TrendDir
+              return (
+                <div key={key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: lg ? '12px' : '10.5px', color: 'rgba(255,255,255,0.4)' }}>{label}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                    <span style={{ fontSize: lg ? '13px' : '11.5px', fontWeight: 700, color, fontFamily: 'JetBrains Mono, monospace' }}>{avg.toFixed(1)}</span>
+                    <TrendIcon dir={dir} focusKey={good} />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* ── Dài hạn (theo tuần) ── */}
+        <div
+          onClick={() => setExpanded(e => e === 'long' ? null : 'long')}
+          style={{ background: 'rgba(255,255,255,0.025)', border: `1px solid ${expanded === 'long' ? longColor + '55' : 'rgba(255,255,255,0.07)'}`, borderRadius: lg ? '16px' : '12px', padding: lg ? '20px 22px' : '12px 14px', cursor: 'pointer', transition: 'border-color 0.2s' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: lg ? '6px' : '4px' }}>
+            <div style={{ fontSize: lg ? '11px' : '10px', fontWeight: 700, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>📅 Xu hướng theo tuần</div>
+            <TrendIcon dir={longTrend} />
+          </div>
+          <div style={{ fontSize: lg ? '12px' : '10.5px', color: 'rgba(255,255,255,0.4)', marginBottom: lg ? '14px' : '10px' }}>
+            {weeklyPts.length >= 2
+              ? `${weeklyPts.length} tuần · ${longTrend === 'up' ? 'cải thiện' : longTrend === 'down' ? 'có chiều hướng giảm' : 'ổn định'}`
+              : `Chưa đủ dữ liệu tuần (${n} phiên)`}
+          </div>
+          <Sparkline pts={weeklyPts.length >= 2 ? weeklyPts : shortPts} valueKey="focus" color={longColor} height={lg ? 80 : 52} />
+
+          {/* Weekly breakdown — last 4 weeks */}
+          {weeklyPts.length >= 2 && (
+            <div style={{ marginTop: lg ? '14px' : '8px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
+              {weeklyPts.slice(-4).map((wp, i) => {
+                const isLast = i === Math.min(weeklyPts.length, 4) - 1
                 return (
-                  <div key={key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '5px' }}>
-                    <span style={{ fontSize: '10.5px', color: 'rgba(255,255,255,0.4)' }}>{label}</span>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                      <span style={{ fontSize: '11px', fontWeight: 700, color, fontFamily: 'JetBrains Mono, monospace' }}>{avg.toFixed(1)}</span>
-                      <TrendIcon dir={dir} color={dir === 'up' ? '#34d399' : dir === 'down' ? '#f87171' : '#64748b'} />
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', opacity: isLast ? 1 : 0.55 + i * 0.15 }}>
+                    <span style={{ fontSize: lg ? '12px' : '10px', color: 'rgba(255,255,255,0.35)', fontFamily: 'JetBrains Mono, monospace' }}>{wp.label}</span>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      <span style={{ fontSize: lg ? '12px' : '10.5px', color: '#60a5fa', fontFamily: 'JetBrains Mono, monospace', fontWeight: isLast ? 700 : 400 }}>{wp.focus.toFixed(1)}<span style={{ color: 'rgba(255,255,255,0.2)', fontSize: '9px' }}>/5</span></span>
+                      <span style={{ fontSize: lg ? '12px' : '10.5px', color: '#f59e0b', fontFamily: 'JetBrains Mono, monospace' }}>{wp.distractions.toFixed(0)}<span style={{ color: 'rgba(255,255,255,0.2)', fontSize: '9px' }}>x</span></span>
+                      <span style={{ fontSize: lg ? '12px' : '10.5px', color: '#34d399', fontFamily: 'JetBrains Mono, monospace' }}>{wp.goalRate.toFixed(0)}<span style={{ color: 'rgba(255,255,255,0.2)', fontSize: '9px' }}>%</span></span>
                     </div>
                   </div>
                 )
@@ -519,81 +496,64 @@ export default function ProgressSummary({ sessions, loading = false }: ProgressS
             </div>
           )}
         </div>
-
-        {/* Dài hạn */}
-        <div
-          onClick={() => setExpanded(e => e === 'long' ? null : 'long')}
-          style={{ background: 'rgba(255,255,255,0.025)', border: `1px solid ${expanded === 'long' ? longColor + '50' : 'rgba(255,255,255,0.06)'}`, borderRadius: '12px', padding: '12px 14px', cursor: 'pointer', transition: 'border-color 0.2s' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-            <div style={{ fontSize: '10px', fontWeight: 700, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>📅 Theo tuần</div>
-            <TrendIcon dir={longTrend} color={longColor} />
-          </div>
-          <Sparkline pts={weeklyPts.length >= 2 ? weeklyPts : shortPts} valueKey="focus" color={longColor} height={44} />
-          <div style={{ marginTop: '6px', fontSize: '10.5px', color: 'rgba(255,255,255,0.4)', lineHeight: 1.5 }}>
-            {weeklyPts.length >= 2
-              ? `${weeklyPts.length} tuần · ${longTrend === 'up' ? 'cải thiện' : longTrend === 'down' ? 'có chiều hướng giảm' : 'ổn định'}`
-              : `Chưa đủ dữ liệu tuần (${n} phiên)`}
-          </div>
-          {expanded === 'long' && weeklyPts.length >= 2 && (
-            <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-              {weeklyPts.slice(-4).map((wp, i) => (
-                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                  <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.35)', fontFamily: 'JetBrains Mono, monospace' }}>{wp.label}</span>
-                  <span style={{ fontSize: '10.5px', color: '#60a5fa', fontFamily: 'JetBrains Mono, monospace' }}>{wp.focus.toFixed(1)}<span style={{ color: 'rgba(255,255,255,0.25)', fontSize: '9px' }}>/5</span></span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
       </div>
 
-      {/* ── Baseline card ── */}
+      {/* ══ Baseline card ══ */}
       {baseline && (
         <div
           onClick={() => setExpanded(e => e === 'baseline' ? null : 'baseline')}
-          style={{ background: 'rgba(255,255,255,0.02)', border: `1px solid ${expanded === 'baseline' ? 'rgba(129,140,248,0.35)' : 'rgba(255,255,255,0.05)'}`, borderLeft: '3px solid #6366f1', borderRadius: '12px', padding: '12px 16px', cursor: 'pointer', transition: 'border-color 0.2s' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '13px' }}>🧮</span>
-              <span style={{ fontSize: '11.5px', fontWeight: 700, color: 'rgba(255,255,255,0.7)' }}>Baseline cá nhân</span>
-              <span style={{ fontSize: '9.5px', color: 'rgba(255,255,255,0.25)', background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: '6px', padding: '1px 6px' }}>
-                n={baseline.sampleSize}
+          style={{
+            background: 'rgba(255,255,255,0.02)',
+            border: `1px solid ${expanded === 'baseline' ? 'rgba(99,102,241,0.4)' : 'rgba(255,255,255,0.06)'}`,
+            borderLeft: `4px solid #6366f1`,
+            borderRadius: lg ? '16px' : '12px',
+            padding: lg ? '20px 24px' : '12px 16px',
+            cursor: 'pointer', transition: 'border-color 0.2s',
+          }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: lg ? '16px' : '10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: lg ? '16px' : '13px' }}>🧮</span>
+              <span style={{ fontSize: lg ? '14px' : '11.5px', fontWeight: 700, color: 'rgba(255,255,255,0.75)' }}>Baseline cá nhân của bạn</span>
+              <span style={{ fontSize: lg ? '11px' : '9.5px', color: 'rgba(255,255,255,0.3)', background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: '6px', padding: '2px 8px' }}>
+                Tính từ {baseline.sampleSize} phiên
               </span>
             </div>
-            <span style={{ fontSize: '9px', color: expanded === 'baseline' ? '#818cf8' : 'rgba(255,255,255,0.2)', display: 'inline-block', transform: expanded === 'baseline' ? 'rotate(180deg)' : 'none', transition: 'all 0.2s' }}>▼</span>
+            <span style={{ fontSize: '10px', color: expanded === 'baseline' ? '#818cf8' : 'rgba(255,255,255,0.2)', display: 'inline-block', transform: expanded === 'baseline' ? 'rotate(180deg)' : 'none', transition: 'all 0.2s' }}>▼</span>
           </div>
 
-          {/* Compact baseline row */}
-          <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap', marginTop: '10px' }}>
+          {/* Baseline metrics grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: lg ? 'repeat(4, 1fr)' : 'repeat(2, 1fr)', gap: lg ? '12px' : '8px' }}>
             {[
-              { label: 'Focus TB', val: baseline.focus.toFixed(1), sub: '/5', color: '#60a5fa' },
-              { label: 'Dropout TB', val: baseline.dropout.toFixed(1), sub: '/5', color: '#f87171' },
-              { label: 'Giờ TB', val: baseline.hours.toFixed(1), sub: 'h', color: '#34d399' },
-              { label: 'Mục tiêu', val: baseline.goalRate.toFixed(0), sub: '%', color: '#a78bfa' },
+              { label: 'Focus trung bình', val: baseline.focus.toFixed(1), sub: '/ 5', color: '#60a5fa' },
+              { label: 'Dropout trung bình', val: baseline.dropout.toFixed(1), sub: '/ 5', color: '#f87171' },
+              { label: 'Giờ học trung bình', val: baseline.hours.toFixed(1), sub: 'h', color: '#34d399' },
+              { label: 'Tỉ lệ đạt mục tiêu', val: baseline.goalRate.toFixed(0), sub: '%', color: '#a78bfa' },
             ].map(({ label, val, sub, color }) => (
-              <div key={label} style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                <span style={{ fontSize: '9.5px', color: 'rgba(255,255,255,0.3)' }}>{label}</span>
-                <span style={{ fontSize: '13px', fontWeight: 800, color, fontFamily: 'JetBrains Mono, monospace' }}>{val}<span style={{ fontSize: '9.5px', fontWeight: 400, color: 'rgba(255,255,255,0.3)' }}>{sub}</span></span>
+              <div key={label} style={{ padding: lg ? '14px 16px' : '10px 12px', background: `${color}0a`, border: `1px solid ${color}20`, borderRadius: '10px' }}>
+                <div style={{ fontSize: lg ? '11px' : '9.5px', color: 'rgba(255,255,255,0.35)', marginBottom: '6px', fontWeight: 600 }}>{label}</div>
+                <div style={{ fontSize: lg ? '26px' : '18px', fontWeight: 800, color, fontFamily: 'JetBrains Mono, monospace', lineHeight: 1 }}>
+                  {val}<span style={{ fontSize: lg ? '13px' : '11px', fontWeight: 400, color: 'rgba(255,255,255,0.3)' }}>{sub}</span>
+                </div>
               </div>
             ))}
           </div>
 
-          {/* Expanded explanation */}
+          {/* Expanded detail */}
           {expanded === 'baseline' && (
-            <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-              <p style={{ margin: '0 0 8px', fontSize: '11.5px', color: 'rgba(255,255,255,0.55)', lineHeight: 1.65 }}>
-                Baseline được tính từ <strong style={{ color: '#a5b4fc' }}>{baseline.sampleSize} phiên lịch sử</strong>, loại trừ 3 phiên gần nhất để tránh ảnh hưởng từ biến động nhất thời. Hệ thống dùng baseline này để phân biệt "<em>khác bình thường của chính bạn</em>" với "<em>suy giảm thực sự</em>".
+            <div style={{ marginTop: lg ? '16px' : '12px', paddingTop: lg ? '16px' : '12px', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+              <p style={{ margin: '0 0 12px', fontSize: lg ? '13px' : '11.5px', color: 'rgba(255,255,255,0.58)', lineHeight: 1.7 }}>
+                Baseline được tính từ <strong style={{ color: '#a5b4fc' }}>{baseline.sampleSize} phiên lịch sử</strong>, loại trừ 3 phiên gần nhất để tránh bị ảnh hưởng bởi biến động nhất thời. Hệ thống dùng baseline này để phân biệt <em>"khác bình thường của chính bạn"</em> với <em>"suy giảm thực sự"</em>.
               </p>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-                <div style={{ padding: '8px 10px', background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.12)', borderRadius: '8px' }}>
-                  <div style={{ fontSize: '9.5px', color: 'rgba(255,255,255,0.3)', marginBottom: '3px' }}>Độ lệch chuẩn Focus</div>
-                  <div style={{ fontSize: '12px', fontWeight: 700, color: '#60a5fa', fontFamily: 'JetBrains Mono, monospace' }}>±{baseline.stdFocus.toFixed(2)}</div>
-                  <div style={{ fontSize: '9px', color: 'rgba(255,255,255,0.25)', marginTop: '2px' }}>Ngưỡng ngoại lệ: &lt;{(baseline.focus - baseline.stdFocus * 1.5).toFixed(1)}</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                <div style={{ padding: lg ? '12px 14px' : '8px 10px', background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.12)', borderRadius: '9px' }}>
+                  <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.3)', marginBottom: '4px' }}>Độ lệch chuẩn Focus (σ)</div>
+                  <div style={{ fontSize: lg ? '18px' : '14px', fontWeight: 700, color: '#60a5fa', fontFamily: 'JetBrains Mono, monospace' }}>±{baseline.stdFocus.toFixed(2)}</div>
+                  <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.25)', marginTop: '3px' }}>Ngưỡng ngoại lệ: &lt;{(baseline.focus - baseline.stdFocus * 1.5).toFixed(1)}</div>
                 </div>
-                <div style={{ padding: '8px 10px', background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.12)', borderRadius: '8px' }}>
-                  <div style={{ fontSize: '9.5px', color: 'rgba(255,255,255,0.3)', marginBottom: '3px' }}>Ngưỡng cảnh báo</div>
-                  <div style={{ fontSize: '12px', fontWeight: 700, color: '#f87171', fontFamily: 'JetBrains Mono, monospace' }}>3 phiên</div>
-                  <div style={{ fontSize: '9px', color: 'rgba(255,255,255,0.25)', marginTop: '2px' }}>Tín hiệu tiêu cực liên tiếp</div>
+                <div style={{ padding: lg ? '12px 14px' : '8px 10px', background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.12)', borderRadius: '9px' }}>
+                  <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.3)', marginBottom: '4px' }}>Ngưỡng nâng cảnh báo</div>
+                  <div style={{ fontSize: lg ? '18px' : '14px', fontWeight: 700, color: '#f87171', fontFamily: 'JetBrains Mono, monospace' }}>3 phiên</div>
+                  <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.25)', marginTop: '3px' }}>Tín hiệu tiêu cực liên tiếp</div>
                 </div>
               </div>
             </div>
@@ -601,9 +561,7 @@ export default function ProgressSummary({ sessions, loading = false }: ProgressS
         </div>
       )}
 
-      <style>{`
-        @keyframes spkPulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.4;transform:scale(0.7)} }
-      `}</style>
+      <style>{`@keyframes psPulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.4;transform:scale(0.7)} }`}</style>
     </div>
   )
 }

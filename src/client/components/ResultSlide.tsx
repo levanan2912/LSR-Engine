@@ -1,7 +1,7 @@
-import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react'
+import React, { useEffect, useState, useMemo } from 'react'
 import { AnalysisReport, DailyEntry } from '../types'
 import AnalysisReportComponent from './AnalysisReport'
-import ProgressSummary, { SessionRecord } from './ProgressSummary'
+
 
 interface Props {
   report: AnalysisReport | null
@@ -633,23 +633,19 @@ function RiskBanner({ report }: { report: AnalysisReport | null }) {
 
 // ─── Main Component ─────────────────────────────────────────────────────────────
 export default function ResultSlide({ report, analyzing, entries, onClose, theme = 'dark', authFetch }: Props) {
-  const [visible,       setVisible]       = useState(false)
-  const [viewMode,      setViewMode]      = useState<ViewMode>('session')
-  const [expandedIdx,   setExpandedIdx]   = useState<number | null>(null)
+  const [visible,        setVisible]       = useState(false)
+  const [viewMode,       setViewMode]      = useState<ViewMode>('session')
+  const [expandedIdx,    setExpandedIdx]   = useState<number | null>(null)
   const [historyEntries, setHistoryEntries] = useState<DailyEntry[]>([])
-  const [fullHistory,   setFullHistory]   = useState<SessionRecord[]>([])
-  const [historyLoading, setHistoryLoading] = useState(false)
 
   useEffect(() => { const t = setTimeout(() => setVisible(true), 30); return () => clearTimeout(t) }, [])
   useEffect(() => { document.body.style.overflow = 'hidden'; return () => { document.body.style.overflow = '' } }, [])
 
-  // Fetch full history (with report data) for charts + ProgressSummary
+  // Fetch history for week/month chart views
   useEffect(() => {
-    if (!authFetch || fullHistory.length > 0) return
-    setHistoryLoading(true)
-    authFetch('/api/entries/history?limit=120').then(r => r.ok ? r.json() : null).then(data => {
+    if (!authFetch || historyEntries.length > 0) return
+    authFetch('/api/entries/history?limit=90').then(r => r.ok ? r.json() : null).then(data => {
       if (data?.sessions) {
-        // Convert for chart use (DailyEntry shape)
         const converted: DailyEntry[] = data.sessions.map((s: any) => ({
           id: s.id, user_id: 0,
           session_date: s.session_date, session_number: s.session_number,
@@ -660,22 +656,8 @@ export default function ResultSlide({ report, analyzing, entries, onClose, theme
           dropout_feeling: s.dropout_feeling, created_at: s.created_at ?? '',
         }))
         setHistoryEntries(converted)
-        // Full history with report data for ProgressSummary
-        const full: SessionRecord[] = data.sessions.map((s: any) => ({
-          id: s.id,
-          session_date: s.session_date,
-          session_number: s.session_number ?? 1,
-          study_hours: Number(s.study_hours ?? 0),
-          focus_level: s.focus_level ?? 3,
-          distraction_count: s.distraction_count ?? 0,
-          goal_achieved: s.goal_achieved ?? 0,
-          dropout_feeling: s.dropout_feeling ?? 3,
-          emotional_state: s.emotional_state ?? null,
-          report: s.report ? { risk_level: s.report.risk_level } : null,
-        }))
-        setFullHistory(full)
       }
-    }).catch(() => {}).finally(() => setHistoryLoading(false))
+    }).catch(() => {})
   }, [authFetch])
 
   const points = useMemo(() => buildPoints(entries, viewMode, historyEntries), [entries, viewMode, historyEntries])
@@ -843,33 +825,15 @@ export default function ResultSlide({ report, analyzing, entries, onClose, theme
 
           <AnalysisReportComponent report={report} loading={analyzing} />
 
-          {/* ── Progress Summary divider ── */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: '26px 0 18px' }}>
-            <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.045)' }} />
-            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '5px 13px', background: 'rgba(99,102,241,0.07)', border: '1px solid rgba(99,102,241,0.15)', borderRadius: '18px' }}>
-              <span style={{ fontSize: '11px' }}>📊</span>
-              <span style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: '10.5px', fontWeight: 600, color: '#a5b4fc' }}>Tiến trình học tập</span>
-            </div>
-            <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.045)' }} />
+          {/* Hint to view full progress in History */}
+          <div style={{ margin: '20px 0 0', padding: '10px 14px', background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.14)', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '14px' }}>📊</span>
+            <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)', fontFamily: 'Space Grotesk, sans-serif', lineHeight: 1.5 }}>
+              Xem <strong style={{ color: '#a5b4fc' }}>Tiến trình học tập</strong> đầy đủ (baseline, xu hướng ngắn/dài hạn) tại trang <strong style={{ color: '#a5b4fc' }}>Lịch sử</strong>.
+            </span>
           </div>
 
-          <ProgressSummary
-            sessions={fullHistory.length > 0 ? fullHistory : entries.map(e => ({
-              id: e.id ?? 0,
-              session_date: e.session_date,
-              session_number: e.session_number ?? 1,
-              study_hours: Number(e.study_hours ?? 0),
-              focus_level: e.focus_level ?? 3,
-              distraction_count: e.distraction_count ?? 0,
-              goal_achieved: e.goal_achieved ? 1 : 0,
-              dropout_feeling: e.dropout_feeling ?? 3,
-              emotional_state: e.emotional_state ?? null,
-              report: null,
-            }))}
-            loading={historyLoading}
-          />
-
-          <div style={{ marginTop: '26px', display: 'flex', justifyContent: 'center' }}>
+          <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'center' }}>
             <button onClick={onClose} style={{
               padding: '10px 32px', borderRadius: '11px',
               background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)',
