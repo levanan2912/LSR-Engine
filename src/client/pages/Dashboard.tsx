@@ -538,88 +538,49 @@ export default function Dashboard({ user, authFetch, onLogout, onNavigate, curre
       <ToastContainer toasts={toast.toasts} onDismiss={toast.dismiss} />
       {todaySessions && <DuplicateModal date={sessionDate} sessions={todaySessions} onAddNew={handleAddNew} onUpdate={handleUpdate} onKeep={handleKeep} />}
 
-      {/* ── Main Grid ── fills remaining viewport height, no outer scroll ── */}
-      <div className="main-grid" style={{
-        flex: 1, display: 'grid',
-        gridTemplateColumns: '460px 1fr',
-        overflow: 'hidden',
-        minHeight: 0,
-        padding: '0 12px',
-        gap: '0',
+      {/* ── Main: centered single column ── */}
+      <div className="main-wrap" style={{
+        flex: 1, overflowY: 'auto', minHeight: 0,
+        display: 'flex', flexDirection: 'column', alignItems: 'center',
+        padding: '16px 12px 24px',
         boxSizing: 'border-box',
       }}>
-
-        {/* ── Left column: Form (scrollable) + Chart (fixed bottom) ── */}
-        <div className="col-left" style={{
-          display: 'flex', flexDirection: 'column',
-          borderRight: '1px solid var(--section-border, rgba(255,255,255,0.07))',
-          overflow: 'hidden',
-          minHeight: 0,
+        <div className="form-card" style={{
+          width: '100%', maxWidth: '540px',
+          background: 'var(--bg-card, rgba(255,255,255,0.03))',
+          border: '1px solid var(--border-card, rgba(255,255,255,0.07))',
+          borderRadius: '14px', padding: '14px 16px',
+          boxShadow: 'var(--card-shadow)',
         }}>
-          {/* Form panel — scrolls independently */}
-          <div style={{ flex: '1 1 0', overflowY: 'auto', padding: '10px 10px 0', minHeight: 0 }}>
-            {/* zoom 90% để StatusBanner luôn hiển thị trong viewport */}
-            <div style={{ zoom: 0.9 }}>
-              <div style={{
-                background: 'var(--bg-card, rgba(255,255,255,0.03))',
-                border: '1px solid var(--border-card, rgba(255,255,255,0.07))',
-                borderRadius: '14px', padding: '12px 14px',
-                boxShadow: 'var(--card-shadow)',
-              }}>
-                <SectionHeader
-                  icon="📝"
-                  title="Nhật ký học tập hôm nay"
-                  right={<AIStatusBar status={aiStatus} />}
-                />
-                <EntryForm ref={formRef} onSubmit={d => submitEntry(d)} loading={submitting} />
-                <StatusBanner
-                  status={submitStatus}
-                  onRetry={pendingEntryId ? retryAI : undefined}
-                  retrying={retrying}
-                />
-              </div>
-            </div>
-          </div>
+          <SectionHeader
+            icon="📝"
+            title="Nhật ký học tập hôm nay"
+            right={<AIStatusBar status={aiStatus} />}
+          />
+          <EntryForm ref={formRef} onSubmit={d => submitEntry(d)} loading={submitting} />
 
+          {/* Nút xem báo cáo gần nhất — chỉ hiện khi đã có report */}
+          {report && (
+            <button
+              onClick={() => setShowResult(true)}
+              style={{
+                marginTop: '10px', width: '100%', padding: '10px 0', borderRadius: '10px',
+                background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.25)',
+                color: '#a5b4fc', fontSize: '13px', fontWeight: 600,
+                fontFamily: 'Space Grotesk, sans-serif', cursor: 'pointer',
+                transition: 'all 0.15s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(99,102,241,0.16)'; e.currentTarget.style.borderColor = 'rgba(99,102,241,0.45)' }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(99,102,241,0.08)'; e.currentTarget.style.borderColor = 'rgba(99,102,241,0.25)' }}
+            >📡 Xem báo cáo gần nhất</button>
+          )}
+
+          <StatusBanner
+            status={submitStatus}
+            onRetry={pendingEntryId ? retryAI : undefined}
+            retrying={retrying}
+          />
         </div>
-
-        {/* ── Right column: prompt card ── */}
-        <div className="col-right" style={{ overflowY: 'auto', padding: '10px', minHeight: 0 }}>
-          <div style={{
-            background: 'var(--bg-card, rgba(255,255,255,0.03))',
-            border: '1px solid var(--border-card, rgba(255,255,255,0.07))',
-            borderRadius: '14px', padding: '24px 20px',
-            minHeight: 'calc(100% - 20px)',
-            boxShadow: 'var(--card-shadow)',
-            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-            textAlign: 'center', gap: '16px',
-          }}>
-            {report ? (
-              <>
-                <div style={{ fontSize: '40px', opacity: 0.7 }}>📊</div>
-                <div style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)' }}>Đã có báo cáo phân tích</div>
-                <div style={{ fontSize: '12px', color: 'var(--text-muted, #64748b)', lineHeight: 1.6, maxWidth: '240px' }}>Điền nhật ký và nhấn phân tích để xem kết quả mới nhất</div>
-                <button
-                  onClick={() => setShowResult(true)}
-                  style={{
-                    marginTop: '4px', padding: '10px 24px', borderRadius: '12px',
-                    background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.35)',
-                    color: '#a5b4fc', fontSize: '13px', fontWeight: 600,
-                    fontFamily: 'Space Grotesk, sans-serif', cursor: 'pointer',
-                    transition: 'all 0.15s',
-                  }}
-                >📡 Xem báo cáo gần nhất</button>
-              </>
-            ) : (
-              <>
-                <div style={{ fontSize: '40px', opacity: 0.3 }}>🧠</div>
-                <div style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)' }}>Chưa có báo cáo AI</div>
-                <div style={{ fontSize: '12px', color: 'var(--text-muted, #64748b)', lineHeight: 1.6, maxWidth: '240px' }}>Điền nhật ký học tập và nhấn ⚡ Phân tích bằng AI để bắt đầu</div>
-              </>
-            )}
-          </div>
-        </div>
-
       </div>
 
       {/* A.N.D Watermark */}
@@ -661,37 +622,8 @@ export default function Dashboard({ user, authFetch, onLogout, onNavigate, curre
           .nav-logo-text { display: none !important; }
         }
 
-        @media (max-width: 1000px) {
-          /* On small screens: root scrolls naturally, no height clipping */
-          .root-wrap  { height: auto !important; overflow: visible !important; }
-          .main-grid  {
-            display: flex !important;
-            flex-direction: column !important;
-            overflow: visible !important;
-            height: auto !important;
-            min-height: unset !important;
-            padding: 0 8px 16px !important;
-            gap: 0 !important;
-          }
-          .col-left {
-            overflow: visible !important;
-            height: auto !important;
-            min-height: unset !important;
-            border-right: none !important;
-            border-bottom: 1px solid var(--section-border, rgba(255,255,255,0.07));
-            padding-bottom: 4px;
-          }
-          /* Form panel inside col-left: let height grow naturally */
-          .col-left > div:first-child {
-            flex: none !important;
-            overflow: visible !important;
-            height: auto !important;
-          }
-          .col-right {
-            overflow: visible !important;
-            height: auto !important;
-            min-height: unset !important;
-          }
+        @media (max-width: 600px) {
+          .form-card { padding: 12px 10px !important; }
         }
       `}</style>
     </div>

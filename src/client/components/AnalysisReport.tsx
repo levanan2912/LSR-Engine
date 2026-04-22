@@ -188,20 +188,25 @@ export default function AnalysisReportComponent({ report, loading }: Props) {
   const theme = RISK_THEME[report.risk_level as keyof typeof RISK_THEME] ?? RISK_THEME['Stable']
   const meta = getModelMeta(report.analyzed_by ?? undefined)
 
-  // created_at từ DB: "2026-04-22 13:46:00" — đã là giờ VN, parse trực tiếp
+  // created_at từ DB: "2026-04-22 14:03:46" — UTC (SQLite CURRENT_TIMESTAMP = UTC)
+  // Phải cộng +7h để ra giờ VN
   const ts = (() => {
     const raw = report.created_at
     if (!raw) return report.report_date
-    // Normalize "YYYY-MM-DD HH:MM:SS" → "YYYY-MM-DDTHH:MM:SS" (không thêm Z)
-    // để browser parse như local time, tránh bị lệch timezone
-    const normalized = raw.includes('T') ? raw.replace(/Z$/, '') : raw.replace(' ', 'T')
+    // Normalize về ISO UTC: "2026-04-22 14:03:46" → "2026-04-22T14:03:46Z"
+    const iso = raw.includes('T')
+      ? (raw.endsWith('Z') ? raw : raw + 'Z')
+      : raw.replace(' ', 'T') + 'Z'
     try {
-      const d = new Date(normalized)
-      const dd = String(d.getDate()).padStart(2, '0')
-      const mm = String(d.getMonth() + 1).padStart(2, '0')
-      const hh = String(d.getHours()).padStart(2, '0')
-      const min = String(d.getMinutes()).padStart(2, '0')
-      return `${hh}:${min} ${dd}/${mm}/${d.getFullYear()}`
+      // Cộng +7h thủ công để luôn đúng bất kể môi trường trình duyệt
+      const utcMs = new Date(iso).getTime()
+      const vnMs  = utcMs + 7 * 3600000
+      const d = new Date(vnMs)
+      const dd  = String(d.getUTCDate()).padStart(2, '0')
+      const mm  = String(d.getUTCMonth() + 1).padStart(2, '0')
+      const hh  = String(d.getUTCHours()).padStart(2, '0')
+      const min = String(d.getUTCMinutes()).padStart(2, '0')
+      return `${hh}:${min} ${dd}/${mm}/${d.getUTCFullYear()}`
     } catch { return report.report_date }
   })()
 
