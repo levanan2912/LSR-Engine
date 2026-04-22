@@ -469,7 +469,6 @@ forum.get('/posts/:id', async (c) => {
       ORDER BY fc.created_at ASC
     `).bind(postId).all()
 
-    const userId = c.get('userId')
     const liked  = await DB.prepare(
       `SELECT 1 FROM forum_likes WHERE post_id = ? AND user_id = ?`
     ).bind(postId, userId).first()
