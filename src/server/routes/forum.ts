@@ -24,22 +24,43 @@ function sanitize(text: string, max: number): string {
   return text.trim().slice(0, max)
 }
 
+/** Parse tag_ids from body — accepts array or comma-separated string */
+function parseTagIds(raw: unknown): number[] {
+  if (!raw) return []
+  if (Array.isArray(raw)) return raw.map(Number).filter(n => !isNaN(n) && n > 0)
+  if (typeof raw === 'string') return raw.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n) && n > 0)
+  return []
+}
+
 const FORUM_MODELS = [
   { name: 'gemini-2.5-flash-lite',         maxOutputTokens: 1024 },
   { name: 'gemini-3.1-flash-lite-preview', maxOutputTokens: 1024 },
   { name: 'gemini-2.5-flash',              maxOutputTokens: 1024 },
 ]
 
+// ─── TAGS ─────────────────────────────────────────────────────────────────────
+
+// GET /api/forum/tags — returns all tags ordered by sort_order
+forum.get('/tags', async (c) => {
+  const { DB } = c.env
+  try {
+    const rows = await DB.prepare(
+      `SELECT id, slug, label, color, icon, sort_order FROM forum_tags ORDER BY sort_order ASC`
+    ).all()
+    return c.json({ tags: rows.results })
+  } catch (err: any) {
+    return c.json({ error: 'db_error', message: err.message }, 500)
+  }
+})
+
 // ─── AI DRAFT ─────────────────────────────────────────────────────────────────
 
 // POST /api/forum/ai-draft
-// Gemini đọc dữ liệu học tập của user → viết bài thảo luận thay cho user
 forum.post('/ai-draft', async (c) => {
   const userId = c.get('userId')
   const { DB } = c.env
 
   try {
-    // Lấy tối đa 10 phiên gần nhất + báo cáo AI
     const rows = await DB.prepare(`
       SELECT
         e.session_date, e.session_number, e.session_time,
@@ -62,11 +83,13 @@ forum.post('/ai-draft', async (c) => {
       }, 422)
     }
 
-    // Lấy thông tin user
     const userRow = await DB.prepare(`SELECT full_name, email FROM users WHERE id = ?`).bind(userId).first<{ full_name: string; email: string }>()
     const userName = userRow?.full_name?.trim() || userRow?.email?.split('@')[0] || 'Người học'
 
-    // Build context
+    // Fetch tag slugs for genre suggestion
+    const allTagsRows = await DB.prepare(`SELECT slug, label FROM forum_tags ORDER BY sort_order`).all<{ slug: string; label: string }>()
+    const tagList = allTagsRows.results.map(t => `${t.slug} (${t.label})`).join(', ')
+
     const lines: string[] = [`=== DỮ LIỆU HỌC TẬP CỦA ${userName.toUpperCase()} ===`]
     rows.results.forEach((row, i) => {
       lines.push(`\nPhiên ${i + 1}: ${row.session_date} S${row.session_number}${row.session_time ? ` lúc ${row.session_time}` : ''}`)
@@ -85,7 +108,7 @@ forum.post('/ai-draft', async (c) => {
           } catch { /* ignore */ }
         }
         if (row.primary_risk_driver) lines.push(`- Vấn đề cốt lõi: ${row.primary_risk_driver}`)
-        if (row.short_term_forecast) lines.push(`- Dự báo: ${row.short_term_forecast}`)
+        if (row.short_term_forecast)  lines.push(`- Dự báo: ${row.short_term_forecast}`)
         if (row.intervention_strategy) lines.push(`- Chiến lược: ${row.intervention_strategy}`)
       }
     })
@@ -102,16 +125,17 @@ QUY TẮC VIẾT BÀI:
 5. Nội dung: 120–250 từ, tự nhiên như người thật đang viết trên diễn đàn
 6. Có thể bày tỏ sự bối rối, lo lắng, tò mò — đây là điều bình thường
 7. Kết thúc bằng một câu hỏi mở cho cộng đồng
+8. Chọn 1–3 genre phù hợp nhất từ danh sách slug sau: ${tagList}
 
 ĐỊNH DẠNG OUTPUT (chỉ trả về JSON, không có markdown, không có text ngoài JSON):
 {
   "title": "tiêu đề bài viết",
-  "content": "nội dung bài viết"
+  "content": "nội dung bài viết",
+  "suggested_tag_slugs": ["slug1", "slug2"]
 }`
 
     const prompt = `${userContext}\n\nDựa vào dữ liệu trên, hãy viết một bài thảo luận theo đúng format JSON đã hướng dẫn.`
 
-    // Call Gemini
     const keyPool = parseApiKeys(c.env.GEMINI_API_KEYS, c.env.GEMINI_API_KEY)
     if (keyPool.length === 0) {
       return c.json({ error: 'config_error', message: 'API key chưa được cấu hình' }, 500)
@@ -119,6 +143,7 @@ QUY TẮC VIẾT BÀI:
 
     let title = ''
     let content = ''
+    let suggestedSlugs: string[] = []
     let lastErr: unknown
     const invalidKeys = new Set<number>()
 
@@ -170,15 +195,16 @@ QUY TẮC VIẾT BÀI:
           const data = await res.json() as GResp
           const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
 
-          // Parse JSON từ response (có thể có markdown code block)
           const jsonStr = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim()
-          // Tìm object JSON đầu tiên
           const match = jsonStr.match(/\{[\s\S]*\}/)
           if (!match) throw new Error('No JSON in response')
           const parsed = JSON.parse(match[0])
           title   = String(parsed.title   ?? '').trim()
           content = String(parsed.content ?? '').trim()
           if (!title || !content) throw new Error('Empty title or content')
+          if (Array.isArray(parsed.suggested_tag_slugs)) {
+            suggestedSlugs = parsed.suggested_tag_slugs.map(String)
+          }
 
           break outer
         } catch (err) {
@@ -195,7 +221,17 @@ QUY TẮC VIẾT BÀI:
       return c.json({ error: 'ai_failed', message: 'AI không thể tạo bài viết lúc này. Thử lại sau.' }, 500)
     }
 
-    return c.json({ success: true, title, content })
+    // Resolve suggested slugs → tag ids
+    let suggestedTagIds: number[] = []
+    if (suggestedSlugs.length > 0) {
+      const placeholders = suggestedSlugs.map(() => '?').join(',')
+      const tagRows = await DB.prepare(
+        `SELECT id FROM forum_tags WHERE slug IN (${placeholders})`
+      ).bind(...suggestedSlugs).all<{ id: number }>()
+      suggestedTagIds = tagRows.results.map(r => r.id)
+    }
+
+    return c.json({ success: true, title, content, suggested_tag_ids: suggestedTagIds })
 
   } catch (err: any) {
     console.error('[forum/ai-draft]', err)
@@ -205,42 +241,97 @@ QUY TẮC VIẾT BÀI:
 
 // ─── POSTS ────────────────────────────────────────────────────────────────────
 
-// GET /api/forum/posts?page=1&limit=20&sort=newest|top
+// GET /api/forum/posts?page=1&limit=20&sort=newest|top&tag=<slug>
 forum.get('/posts', async (c) => {
-  const page   = Math.max(1, parseInt(c.req.query('page')  || '1',  10))
-  const limit  = Math.min(50, Math.max(1, parseInt(c.req.query('limit') || '20', 10)))
-  const offset = (page - 1) * limit
-  const sort   = c.req.query('sort') === 'top' ? 'top' : 'newest'
-  const { DB } = c.env
+  const page    = Math.max(1, parseInt(c.req.query('page')  || '1',  10))
+  const limit   = Math.min(50, Math.max(1, parseInt(c.req.query('limit') || '20', 10)))
+  const offset  = (page - 1) * limit
+  const sort    = c.req.query('sort') === 'top' ? 'top' : 'newest'
+  const tagSlug = c.req.query('tag') || ''
+  const { DB }  = c.env
 
   const orderBy = sort === 'top'
     ? '(SELECT COUNT(*) FROM forum_likes fl WHERE fl.post_id = fp.id) DESC, fp.created_at DESC'
     : 'fp.created_at DESC'
 
   try {
-    const countRow = await DB.prepare(`SELECT COUNT(*) as total FROM forum_posts`).first<{ total: number }>()
+    let countRow: { total: number } | null
+    let rows: D1Result
+
+    if (tagSlug) {
+      // Filter by tag slug via junction
+      countRow = await DB.prepare(`
+        SELECT COUNT(DISTINCT fp.id) as total
+        FROM forum_posts fp
+        JOIN forum_post_tags fpt ON fpt.post_id = fp.id
+        JOIN forum_tags ft ON ft.id = fpt.tag_id AND ft.slug = ?
+      `).bind(tagSlug).first<{ total: number }>()
+
+      rows = await DB.prepare(`
+        SELECT
+          fp.id, fp.user_id, fp.title, fp.content, fp.created_at, fp.updated_at,
+          u.full_name  AS author_name,
+          u.email      AS author_email,
+          (SELECT COUNT(*) FROM forum_comments fc WHERE fc.post_id = fp.id) AS comment_count,
+          (SELECT COUNT(*) FROM forum_likes   fl WHERE fl.post_id = fp.id) AS like_count
+        FROM forum_posts fp
+        JOIN users u ON u.id = fp.user_id
+        JOIN forum_post_tags fpt ON fpt.post_id = fp.id
+        JOIN forum_tags ft ON ft.id = fpt.tag_id AND ft.slug = ?
+        GROUP BY fp.id
+        ORDER BY ${orderBy}
+        LIMIT ? OFFSET ?
+      `).bind(tagSlug, limit, offset).all()
+    } else {
+      countRow = await DB.prepare(`SELECT COUNT(*) as total FROM forum_posts`).first<{ total: number }>()
+
+      rows = await DB.prepare(`
+        SELECT
+          fp.id, fp.user_id, fp.title, fp.content, fp.created_at, fp.updated_at,
+          u.full_name  AS author_name,
+          u.email      AS author_email,
+          (SELECT COUNT(*) FROM forum_comments fc WHERE fc.post_id = fp.id) AS comment_count,
+          (SELECT COUNT(*) FROM forum_likes   fl WHERE fl.post_id = fp.id) AS like_count
+        FROM forum_posts fp
+        JOIN users u ON u.id = fp.user_id
+        ORDER BY ${orderBy}
+        LIMIT ? OFFSET ?
+      `).bind(limit, offset).all()
+    }
+
     const total = countRow?.total ?? 0
 
-    const rows = await DB.prepare(`
-      SELECT
-        fp.id, fp.user_id, fp.title, fp.content, fp.created_at, fp.updated_at,
-        u.full_name  AS author_name,
-        u.email      AS author_email,
-        (SELECT COUNT(*) FROM forum_comments fc WHERE fc.post_id = fp.id) AS comment_count,
-        (SELECT COUNT(*) FROM forum_likes   fl WHERE fl.post_id = fp.id) AS like_count
-      FROM forum_posts fp
-      JOIN users u ON u.id = fp.user_id
-      ORDER BY ${orderBy}
-      LIMIT ? OFFSET ?
-    `).bind(limit, offset).all()
+    // Fetch tags for each post
+    const postIds: number[] = (rows.results as any[]).map((r: any) => r.id)
+    let postTagsMap: Map<number, any[]> = new Map()
+    if (postIds.length > 0) {
+      const ph = postIds.map(() => '?').join(',')
+      const tagRows = await DB.prepare(`
+        SELECT fpt.post_id, ft.id, ft.slug, ft.label, ft.color, ft.icon
+        FROM forum_post_tags fpt
+        JOIN forum_tags ft ON ft.id = fpt.tag_id
+        WHERE fpt.post_id IN (${ph})
+        ORDER BY ft.sort_order
+      `).bind(...postIds).all<{ post_id: number; id: number; slug: string; label: string; color: string; icon: string }>()
 
-    return c.json({ posts: rows.results, total, page, limit, total_pages: Math.ceil(total / limit) })
+      for (const t of tagRows.results) {
+        if (!postTagsMap.has(t.post_id)) postTagsMap.set(t.post_id, [])
+        postTagsMap.get(t.post_id)!.push({ id: t.id, slug: t.slug, label: t.label, color: t.color, icon: t.icon })
+      }
+    }
+
+    const postsWithTags = (rows.results as any[]).map((p: any) => ({
+      ...p,
+      tags: postTagsMap.get(p.id) ?? [],
+    }))
+
+    return c.json({ posts: postsWithTags, total, page, limit, total_pages: Math.ceil(total / limit) })
   } catch (err: any) {
     return c.json({ error: 'db_error', message: err.message }, 500)
   }
 })
 
-// GET /api/forum/posts/:id  — single post + all comments (flat, with parent_id)
+// GET /api/forum/posts/:id  — single post + comments + tags
 forum.get('/posts/:id', async (c) => {
   const postId = parseInt(c.req.param('id'), 10)
   if (isNaN(postId)) return c.json({ error: 'invalid_id' }, 400)
@@ -259,7 +350,16 @@ forum.get('/posts/:id', async (c) => {
 
     if (!post) return c.json({ error: 'not_found' }, 404)
 
-    // Flat list — client builds tree
+    // Tags for this post
+    const tagsRows = await DB.prepare(`
+      SELECT ft.id, ft.slug, ft.label, ft.color, ft.icon
+      FROM forum_post_tags fpt
+      JOIN forum_tags ft ON ft.id = fpt.tag_id
+      WHERE fpt.post_id = ?
+      ORDER BY ft.sort_order
+    `).bind(postId).all()
+
+    // Flat comments
     const comments = await DB.prepare(`
       SELECT
         fc.id, fc.post_id, fc.user_id, fc.parent_id,
@@ -276,13 +376,17 @@ forum.get('/posts/:id', async (c) => {
       `SELECT 1 FROM forum_likes WHERE post_id = ? AND user_id = ?`
     ).bind(postId, userId).first()
 
-    return c.json({ post, comments: comments.results, liked: !!liked })
+    return c.json({
+      post: { ...post, tags: tagsRows.results },
+      comments: comments.results,
+      liked: !!liked,
+    })
   } catch (err: any) {
     return c.json({ error: 'db_error', message: err.message }, 500)
   }
 })
 
-// POST /api/forum/posts
+// POST /api/forum/posts   body: { title, content, tag_ids?: number[] }
 forum.post('/posts', async (c) => {
   const userId = c.get('userId')
   const { DB } = c.env
@@ -292,10 +396,11 @@ forum.post('/posts', async (c) => {
 
   const title   = sanitize(String(body.title   ?? ''), 200)
   const content = sanitize(String(body.content ?? ''), 10000)
+  const tagIds  = parseTagIds(body.tag_ids).slice(0, 5) // max 5 tags
 
-  if (!title)              return c.json({ error: 'validation', message: 'Tiêu đề không được để trống' }, 422)
-  if (title.length < 5)   return c.json({ error: 'validation', message: 'Tiêu đề phải có ít nhất 5 ký tự' }, 422)
-  if (!content)            return c.json({ error: 'validation', message: 'Nội dung không được để trống' }, 422)
+  if (!title)            return c.json({ error: 'validation', message: 'Tiêu đề không được để trống' }, 422)
+  if (title.length < 5)  return c.json({ error: 'validation', message: 'Tiêu đề phải có ít nhất 5 ký tự' }, 422)
+  if (!content)          return c.json({ error: 'validation', message: 'Nội dung không được để trống' }, 422)
 
   try {
     const result = await DB.prepare(
@@ -303,19 +408,35 @@ forum.post('/posts', async (c) => {
     ).bind(userId, title, content).run()
 
     const postId = result.meta.last_row_id
-    const post   = await DB.prepare(`
+
+    // Insert tags
+    if (tagIds.length > 0) {
+      const stmts = tagIds.map(tid =>
+        DB.prepare(`INSERT OR IGNORE INTO forum_post_tags (post_id, tag_id) VALUES (?,?)`).bind(postId, tid)
+      )
+      await DB.batch(stmts)
+    }
+
+    const post = await DB.prepare(`
       SELECT fp.id, fp.user_id, fp.title, fp.content, fp.created_at, fp.updated_at,
              u.full_name AS author_name, u.email AS author_email
       FROM forum_posts fp JOIN users u ON u.id = fp.user_id WHERE fp.id = ?
     `).bind(postId).first()
 
-    return c.json({ success: true, post }, 201)
+    // Return tags attached
+    const tagsRows = await DB.prepare(`
+      SELECT ft.id, ft.slug, ft.label, ft.color, ft.icon
+      FROM forum_post_tags fpt JOIN forum_tags ft ON ft.id = fpt.tag_id
+      WHERE fpt.post_id = ? ORDER BY ft.sort_order
+    `).bind(postId).all()
+
+    return c.json({ success: true, post: { ...post, tags: tagsRows.results, like_count: 0, comment_count: 0 } }, 201)
   } catch (err: any) {
     return c.json({ error: 'db_error', message: err.message }, 500)
   }
 })
 
-// PUT /api/forum/posts/:id
+// PUT /api/forum/posts/:id   body: { title, content, tag_ids?: number[] }
 forum.put('/posts/:id', async (c) => {
   const userId = c.get('userId')
   const postId = parseInt(c.req.param('id'), 10)
@@ -327,14 +448,25 @@ forum.put('/posts/:id', async (c) => {
 
   const title   = sanitize(String(body.title   ?? ''), 200)
   const content = sanitize(String(body.content ?? ''), 10000)
+  const tagIds  = parseTagIds(body.tag_ids).slice(0, 5)
   if (!title || !content) return c.json({ error: 'validation', message: 'Tiêu đề và nội dung không được để trống' }, 422)
 
   try {
     const existing = await DB.prepare(`SELECT user_id FROM forum_posts WHERE id = ?`).bind(postId).first<{ user_id: number }>()
-    if (!existing)                      return c.json({ error: 'not_found' }, 404)
-    if (existing.user_id !== userId)    return c.json({ error: 'forbidden' }, 403)
+    if (!existing)                   return c.json({ error: 'not_found' }, 404)
+    if (existing.user_id !== userId) return c.json({ error: 'forbidden' }, 403)
 
     await DB.prepare(`UPDATE forum_posts SET title=?, content=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`).bind(title, content, postId).run()
+
+    // Replace tags
+    await DB.prepare(`DELETE FROM forum_post_tags WHERE post_id = ?`).bind(postId).run()
+    if (tagIds.length > 0) {
+      const stmts = tagIds.map(tid =>
+        DB.prepare(`INSERT OR IGNORE INTO forum_post_tags (post_id, tag_id) VALUES (?,?)`).bind(postId, tid)
+      )
+      await DB.batch(stmts)
+    }
+
     return c.json({ success: true })
   } catch (err: any) {
     return c.json({ error: 'db_error', message: err.message }, 500)
@@ -384,8 +516,7 @@ forum.post('/posts/:id/like', async (c) => {
 
 // ─── COMMENTS ────────────────────────────────────────────────────────────────
 
-// POST /api/forum/posts/:id/comments — add comment or nested reply (unlimited depth)
-// body: { content, parent_id? }
+// POST /api/forum/posts/:id/comments — body: { content, parent_id? }
 forum.post('/posts/:id/comments', async (c) => {
   const userId = c.get('userId')
   const postId = parseInt(c.req.param('id'), 10)
@@ -404,7 +535,6 @@ forum.post('/posts/:id/comments', async (c) => {
     const post = await DB.prepare(`SELECT id FROM forum_posts WHERE id=?`).bind(postId).first()
     if (!post) return c.json({ error: 'not_found' }, 404)
 
-    // Validate parent if provided — must belong to the same post (no restriction on depth)
     if (parentId != null) {
       const parent = await DB.prepare(`SELECT id FROM forum_comments WHERE id=? AND post_id=?`).bind(parentId, postId).first()
       if (!parent) return c.json({ error: 'validation', message: 'Bình luận gốc không tồn tại' }, 422)

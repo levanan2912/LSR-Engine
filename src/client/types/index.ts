@@ -107,6 +107,15 @@ export interface HistoryData {
 
 // ─── Forum types ──────────────────────────────────────────────────────────────
 
+export interface ForumTag {
+  id: number
+  slug: string
+  label: string
+  color: string
+  icon: string
+  sort_order?: number
+}
+
 export interface ForumPost {
   id: number
   user_id: number
@@ -118,6 +127,7 @@ export interface ForumPost {
   author_email: string
   comment_count: number
   like_count: number
+  tags: ForumTag[]
 }
 
 export interface ForumComment {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { User, ForumPost, ForumComment } from '../types'
+import { User, ForumPost, ForumComment, ForumTag } from '../types'
 import ChatBot from '../components/ChatBot'
 import ChangePasswordModal from '../components/ChangePasswordModal'
 
@@ -15,7 +15,6 @@ interface Props {
 
 type SortMode = 'newest' | 'top'
 
-// ── Tree node ──
 interface CommentNode extends ForumComment {
   children: CommentNode[]
 }
@@ -44,7 +43,6 @@ function authorLabel(name: string, email: string): string {
   return name && name.trim() ? name : email.split('@')[0]
 }
 
-/** Build tree from flat comment list */
 function buildTree(flat: ForumComment[]): CommentNode[] {
   const map = new Map<number, CommentNode>()
   const roots: CommentNode[] = []
@@ -57,6 +55,97 @@ function buildTree(flat: ForumComment[]): CommentNode[] {
     }
   }
   return roots
+}
+
+// ─── TagBadge ─────────────────────────────────────────────────────────────────
+
+function TagBadge({ tag, small = false, onClick }: {
+  tag: ForumTag
+  small?: boolean
+  onClick?: () => void
+}) {
+  const pad    = small ? '2px 7px' : '3px 10px'
+  const fSize  = small ? '10px' : '11px'
+  return (
+    <span
+      onClick={e => { if (onClick) { e.stopPropagation(); onClick() } }}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: '3px',
+        background: `${tag.color}22`,
+        border: `1px solid ${tag.color}55`,
+        borderRadius: '20px', padding: pad,
+        fontSize: fSize, fontWeight: 600,
+        color: tag.color,
+        cursor: onClick ? 'pointer' : 'default',
+        userSelect: 'none', whiteSpace: 'nowrap',
+        transition: 'all 0.12s',
+        lineHeight: 1.4,
+      }}
+      onMouseEnter={e => { if (onClick) (e.currentTarget as HTMLElement).style.background = `${tag.color}40` }}
+      onMouseLeave={e => { if (onClick) (e.currentTarget as HTMLElement).style.background = `${tag.color}22` }}
+    >
+      {tag.icon} {tag.label}
+    </span>
+  )
+}
+
+// ─── TagSelector ──────────────────────────────────────────────────────────────
+// Used inside CreatePostModal — shows all available tags as clickable chips
+
+function TagSelector({ tags, selected, onChange, isDark }: {
+  tags: ForumTag[]
+  selected: number[]
+  onChange: (ids: number[]) => void
+  isDark: boolean
+}) {
+  const toggle = (id: number) => {
+    if (selected.includes(id)) {
+      onChange(selected.filter(x => x !== id))
+    } else if (selected.length < 5) {
+      onChange([...selected, id])
+    }
+  }
+
+  return (
+    <div>
+      <label style={{
+        fontSize: '12px', color: isDark ? '#94a3b8' : '#64748b',
+        fontWeight: 600, display: 'block', marginBottom: '8px',
+      }}>
+        Thể loại <span style={{ fontWeight: 400, color: isDark ? '#64748b' : '#94a3b8' }}>(chọn 1–5)</span>
+      </label>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+        {tags.map(tag => {
+          const active = selected.includes(tag.id)
+          return (
+            <span
+              key={tag.id}
+              onClick={() => toggle(tag.id)}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: '4px',
+                background: active ? `${tag.color}30` : (isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9'),
+                border: `1.5px solid ${active ? tag.color : (isDark ? 'rgba(255,255,255,0.1)' : '#e2e8f0')}`,
+                borderRadius: '20px', padding: '4px 12px',
+                fontSize: '12px', fontWeight: active ? 700 : 500,
+                color: active ? tag.color : (isDark ? '#94a3b8' : '#64748b'),
+                cursor: 'pointer', userSelect: 'none',
+                transition: 'all 0.12s',
+                boxShadow: active ? `0 0 0 2px ${tag.color}33` : 'none',
+              }}
+            >
+              {tag.icon} {tag.label}
+              {active && <span style={{ fontSize: '9px', marginLeft: '1px' }}>✓</span>}
+            </span>
+          )
+        })}
+      </div>
+      {selected.length === 5 && (
+        <div style={{ fontSize: '11px', color: '#f59e0b', marginTop: '5px' }}>
+          ⚠️ Tối đa 5 thể loại
+        </div>
+      )}
+    </div>
+  )
 }
 
 // ─── Avatar ──────────────────────────────────────────────────────────────────
@@ -78,9 +167,7 @@ function Avatar({ name, size = 32 }: { name: string; size?: number }) {
 
 // ─── ReplyBox ─────────────────────────────────────────────────────────────────
 
-function ReplyBox({
-  isDark, parentAuthor, onSubmit, onCancel,
-}: {
+function ReplyBox({ isDark, parentAuthor, onSubmit, onCancel }: {
   isDark: boolean
   parentAuthor: string
   onSubmit: (text: string) => Promise<void>
@@ -136,55 +223,34 @@ function ReplyBox({
   )
 }
 
-// ─── CommentNode (recursive) ──────────────────────────────────────────────────
+// ─── CommentItem (recursive — unlimited depth) ────────────────────────────────
 
-function CommentItem({
-  node, userId, isDark, depth,
-  onReply, onDelete,
-}: {
+function CommentItem({ node, userId, isDark, depth, onReply, onDelete }: {
   node: CommentNode
   userId: number
   isDark: boolean
-  depth: number            // 0 = top-level, 1, 2, … unlimited
+  depth: number
   onReply: (parentId: number, parentAuthor: string, text: string) => Promise<void>
   onDelete: (id: number) => void
 }) {
-  const [childrenOpen, setChildrenOpen] = useState(depth < 2) // auto-open first 2 levels
+  const [childrenOpen, setChildrenOpen] = useState(depth < 2)
   const [showReplyBox, setShowReplyBox] = useState(false)
 
-  const label   = authorLabel(node.author_name, node.author_email)
-  const isMine  = node.user_id === userId
+  const label      = authorLabel(node.author_name, node.author_email)
+  const isMine     = node.user_id === userId
   const hasChildren = node.children.length > 0
-
-  // Indent capped at 40px per level for readability
-  const indentPx = Math.min(depth * 20, 120)
-
-  // Slightly smaller avatar per level (min 20px)
-  const avatarSz = Math.max(20, 28 - depth * 2)
-
-  const borderColors = ['#818cf8','#a78bfa','#c4b5fd','#ddd6fe','#ede9fe']
-  const lineColor = borderColors[Math.min(depth, borderColors.length - 1)]
-
-  const bg     = depth === 0
-    ? (isDark ? 'rgba(255,255,255,0.04)' : '#ffffff')
-    : (isDark ? 'rgba(255,255,255,0.025)' : '#f8fafc')
-  const border = depth === 0
-    ? (isDark ? 'rgba(255,255,255,0.08)' : '#e2e8f0')
-    : (isDark ? 'rgba(255,255,255,0.06)' : '#e8edf4')
+  const indentPx   = Math.min(depth * 20, 120)
+  const avatarSz   = Math.max(20, 28 - depth * 2)
+  const lineColors = ['#818cf8','#a78bfa','#c4b5fd','#ddd6fe','#ede9fe']
+  const lineColor  = lineColors[Math.min(depth, lineColors.length - 1)]
+  const bg     = depth === 0 ? (isDark ? 'rgba(255,255,255,0.04)' : '#ffffff') : (isDark ? 'rgba(255,255,255,0.025)' : '#f8fafc')
+  const border = depth === 0 ? (isDark ? 'rgba(255,255,255,0.08)' : '#e2e8f0') : (isDark ? 'rgba(255,255,255,0.06)' : '#e8edf4')
 
   return (
     <div style={{ marginLeft: `${indentPx}px` }}>
-      {/* The comment card */}
-      <div style={{
-        background: bg,
-        border: `1px solid ${border}`,
-        borderRadius: '10px',
-        padding: '10px 13px',
-        display: 'flex', gap: '9px', alignItems: 'flex-start',
-      }}>
+      <div style={{ background: bg, border: `1px solid ${border}`, borderRadius: '10px', padding: '10px 13px', display: 'flex', gap: '9px', alignItems: 'flex-start' }}>
         <Avatar name={label} size={avatarSz} />
         <div style={{ flex: 1, minWidth: 0 }}>
-          {/* Author + time + delete */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
             <span style={{ fontSize: '12px', fontWeight: 600, color: isDark ? '#94a3b8' : '#475569' }}>
               {label}
@@ -195,93 +261,44 @@ function CommentItem({
             {isMine && (
               <button
                 onClick={() => onDelete(node.id)}
-                style={{
-                  background: 'transparent', border: 'none', cursor: 'pointer',
-                  color: isDark ? '#64748b' : '#94a3b8', fontSize: '11px',
-                  padding: '1px 3px', borderRadius: '4px', lineHeight: 1,
-                  transition: 'color 0.15s',
-                }}
+                style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: isDark ? '#64748b' : '#94a3b8', fontSize: '11px', padding: '1px 3px', borderRadius: '4px', lineHeight: 1, transition: 'color 0.15s' }}
                 onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = '#ef4444' }}
                 onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = isDark ? '#64748b' : '#94a3b8' }}
                 title="Xóa"
               >🗑</button>
             )}
           </div>
-
-          {/* Content */}
           <div style={{ fontSize: '13px', color: isDark ? '#cbd5e1' : '#334155', lineHeight: 1.65, whiteSpace: 'pre-line' }}>
             {node.content}
           </div>
-
-          {/* Actions */}
           <div style={{ display: 'flex', gap: '12px', marginTop: '7px', alignItems: 'center' }}>
             <button
               onClick={() => { setShowReplyBox(v => !v); if (!showReplyBox && !childrenOpen) setChildrenOpen(true) }}
-              style={{
-                background: 'transparent', border: 'none', cursor: 'pointer', padding: 0,
-                fontSize: '12px', fontWeight: 600,
-                color: showReplyBox ? '#818cf8' : (isDark ? '#64748b' : '#94a3b8'),
-                display: 'flex', alignItems: 'center', gap: '3px',
-              }}
+              style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, fontSize: '12px', fontWeight: 600, color: showReplyBox ? '#818cf8' : (isDark ? '#64748b' : '#94a3b8'), display: 'flex', alignItems: 'center', gap: '3px' }}
             >↩ Trả lời</button>
-
             {hasChildren && (
               <button
                 onClick={() => setChildrenOpen(v => !v)}
-                style={{
-                  background: 'transparent', border: 'none', cursor: 'pointer', padding: 0,
-                  fontSize: '12px', fontWeight: 600,
-                  color: childrenOpen ? '#818cf8' : (isDark ? '#64748b' : '#94a3b8'),
-                  display: 'flex', alignItems: 'center', gap: '4px',
-                  transition: 'color 0.15s',
-                }}
+                style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, fontSize: '12px', fontWeight: 600, color: childrenOpen ? '#818cf8' : (isDark ? '#64748b' : '#94a3b8'), display: 'flex', alignItems: 'center', gap: '4px', transition: 'color 0.15s' }}
               >
-                <span style={{
-                  display: 'inline-block', fontSize: '9px',
-                  transform: childrenOpen ? 'rotate(90deg)' : 'rotate(0deg)',
-                  transition: 'transform 0.2s',
-                }}>▶</span>
+                <span style={{ display: 'inline-block', fontSize: '9px', transform: childrenOpen ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▶</span>
                 {node.children.length} phản hồi
               </button>
             )}
           </div>
-
-          {/* Inline reply box */}
           {showReplyBox && (
             <ReplyBox
-              isDark={isDark}
-              parentAuthor={label}
-              onSubmit={async (text) => {
-                await onReply(node.id, label, text)
-                setShowReplyBox(false)
-                setChildrenOpen(true)
-              }}
+              isDark={isDark} parentAuthor={label}
+              onSubmit={async (text) => { await onReply(node.id, label, text); setShowReplyBox(false); setChildrenOpen(true) }}
               onCancel={() => setShowReplyBox(false)}
             />
           )}
         </div>
       </div>
-
-      {/* Children (recursive) — indented + left accent line */}
       {hasChildren && childrenOpen && (
-        <div style={{
-          marginTop: '6px',
-          borderLeft: `2px solid ${lineColor}`,
-          paddingLeft: '10px',
-          display: 'flex', flexDirection: 'column', gap: '6px',
-          opacity: childrenOpen ? 1 : 0,
-          transition: 'opacity 0.15s',
-        }}>
+        <div style={{ marginTop: '6px', borderLeft: `2px solid ${lineColor}`, paddingLeft: '10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
           {node.children.map(child => (
-            <CommentItem
-              key={child.id}
-              node={child}
-              userId={userId}
-              isDark={isDark}
-              depth={depth + 1}
-              onReply={onReply}
-              onDelete={onDelete}
-            />
+            <CommentItem key={child.id} node={child} userId={userId} isDark={isDark} depth={depth + 1} onReply={onReply} onDelete={onDelete} />
           ))}
         </div>
       )}
@@ -291,15 +308,14 @@ function CommentItem({
 
 // ─── PostCard ─────────────────────────────────────────────────────────────────
 
-function PostCard({
-  post, userId, isDark, onClick, onDelete,
-}: {
+function PostCard({ post, userId, isDark, onClick, onDelete, onTagClick }: {
   post: ForumPost; userId: number; isDark: boolean
   onClick: () => void; onDelete: (id: number) => void
+  onTagClick: (slug: string) => void
 }) {
   const label   = authorLabel(post.author_name, post.author_email)
   const isOwner = post.user_id === userId
-  const preview = post.content.length > 200 ? post.content.slice(0, 200) + '…' : post.content
+  const preview = post.content.length > 180 ? post.content.slice(0, 180) + '…' : post.content
 
   return (
     <div
@@ -322,6 +338,7 @@ function PostCard({
         el.style.background  = isDark ? 'rgba(255,255,255,0.04)' : '#ffffff'
       }}
     >
+      {/* Author row */}
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
         <Avatar name={label} />
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -336,20 +353,29 @@ function PostCard({
         {isOwner && (
           <button
             onClick={e => { e.stopPropagation(); onDelete(post.id) }}
-            style={{
-              background: 'transparent', border: 'none', cursor: 'pointer',
-              color: isDark ? '#64748b' : '#94a3b8', fontSize: '13px',
-              padding: '2px 6px', borderRadius: '6px', flexShrink: 0,
-            }}
+            style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: isDark ? '#64748b' : '#94a3b8', fontSize: '13px', padding: '2px 6px', borderRadius: '6px', flexShrink: 0 }}
             onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = '#ef4444' }}
             onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = isDark ? '#64748b' : '#94a3b8' }}
             title="Xóa bài"
           >🗑</button>
         )}
       </div>
+
+      {/* Tags */}
+      {post.tags && post.tags.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
+          {post.tags.map(tag => (
+            <TagBadge key={tag.id} tag={tag} small onClick={() => onTagClick(tag.slug)} />
+          ))}
+        </div>
+      )}
+
+      {/* Preview */}
       <div style={{ fontSize: '13px', color: isDark ? '#94a3b8' : '#475569', lineHeight: 1.6, whiteSpace: 'pre-line' }}>
         {preview}
       </div>
+
+      {/* Counters */}
       <div style={{ display: 'flex', gap: '14px', fontSize: '12px', color: isDark ? '#64748b' : '#94a3b8' }}>
         <span>❤️ {post.like_count}</span>
         <span>💬 {post.comment_count} bình luận</span>
@@ -360,12 +386,11 @@ function PostCard({
 
 // ─── PostDetail ───────────────────────────────────────────────────────────────
 
-function PostDetail({
-  postId, userId, isDark, authFetch, onBack,
-}: {
+function PostDetail({ postId, userId, isDark, authFetch, onBack, onTagClick }: {
   postId: number; userId: number; isDark: boolean
   authFetch: (url: string, options?: RequestInit) => Promise<Response>
   onBack: () => void
+  onTagClick: (slug: string) => void
 }) {
   const [post, setPost]         = useState<ForumPost | null>(null)
   const [comments, setComments] = useState<ForumComment[]>([])
@@ -402,14 +427,12 @@ function PostDetail({
     } catch {}
   }
 
-  // Submit a new top-level comment
   const handleComment = async () => {
     if (!commentText.trim()) return
     setSubmitting(true)
     try {
       const res  = await authFetch(`/api/forum/posts/${postId}/comments`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: commentText.trim() }),
       })
       const data = await res.json() as any
@@ -419,12 +442,10 @@ function PostDetail({
     setSubmitting(false)
   }
 
-  // Submit a reply (any depth)
   const handleReply = async (parentId: number, _parentAuthor: string, text: string) => {
     try {
       const res  = await authFetch(`/api/forum/posts/${postId}/comments`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: text, parent_id: parentId }),
       })
       const data = await res.json() as any
@@ -438,14 +459,11 @@ function PostDetail({
     try {
       const res = await authFetch(`/api/forum/comments/${id}`, { method: 'DELETE' })
       if (res.ok) {
-        // BFS: collect deleted node + all its descendants from flat list
         const toRemove = new Set<number>([id])
         let prev = -1
         while (prev !== toRemove.size) {
           prev = toRemove.size
-          comments.forEach(c => {
-            if (c.parent_id != null && toRemove.has(c.parent_id)) toRemove.add(c.id)
-          })
+          comments.forEach(c => { if (c.parent_id != null && toRemove.has(c.parent_id)) toRemove.add(c.id) })
         }
         setComments(prev => prev.filter(c => !toRemove.has(c.id)))
       }
@@ -453,8 +471,6 @@ function PostDetail({
   }
 
   const tree = buildTree(comments)
-  const totalComments = comments.length
-
   const card: React.CSSProperties = {
     background: isDark ? 'rgba(255,255,255,0.04)' : '#ffffff',
     border: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : '#e2e8f0'}`,
@@ -491,6 +507,16 @@ function PostDetail({
             </div>
           </div>
         </div>
+
+        {/* Tags */}
+        {post.tags && post.tags.length > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+            {post.tags.map(tag => (
+              <TagBadge key={tag.id} tag={tag} onClick={() => { onBack(); onTagClick(tag.slug) }} />
+            ))}
+          </div>
+        )}
+
         <div style={{ fontSize: '14px', color: isDark ? '#cbd5e1' : '#334155', lineHeight: 1.75, whiteSpace: 'pre-line', borderTop: `1px solid ${isDark ? 'rgba(255,255,255,0.06)' : '#f1f5f9'}`, paddingTop: '14px' }}>
           {post.content}
         </div>
@@ -505,35 +531,22 @@ function PostDetail({
           }}>
             {liked ? '❤️' : '🤍'} {likeCount}
           </button>
-          <span style={{ fontSize: '12px', color: isDark ? '#64748b' : '#94a3b8' }}>💬 {totalComments} bình luận</span>
+          <span style={{ fontSize: '12px', color: isDark ? '#64748b' : '#94a3b8' }}>💬 {comments.length} bình luận</span>
         </div>
       </div>
 
-      {/* Comments section */}
+      {/* Comments */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
         <h3 style={{ fontSize: '13px', fontWeight: 700, color: isDark ? '#64748b' : '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.6px' }}>
-          Bình luận ({totalComments})
+          Bình luận ({comments.length})
         </h3>
 
         {tree.map(node => (
-          <CommentItem
-            key={node.id}
-            node={node}
-            userId={userId}
-            isDark={isDark}
-            depth={0}
-            onReply={handleReply}
-            onDelete={handleDeleteComment}
-          />
+          <CommentItem key={node.id} node={node} userId={userId} isDark={isDark} depth={0} onReply={handleReply} onDelete={handleDeleteComment} />
         ))}
 
         {tree.length === 0 && (
-          <div style={{
-            textAlign: 'center', padding: '28px',
-            background: isDark ? 'rgba(255,255,255,0.02)' : '#fafafa',
-            border: `1px dashed ${isDark ? 'rgba(255,255,255,0.08)' : '#e2e8f0'}`,
-            borderRadius: '10px', color: isDark ? '#64748b' : '#94a3b8', fontSize: '13px',
-          }}>
+          <div style={{ textAlign: 'center', padding: '28px', background: isDark ? 'rgba(255,255,255,0.02)' : '#fafafa', border: `1px dashed ${isDark ? 'rgba(255,255,255,0.08)' : '#e2e8f0'}`, borderRadius: '10px', color: isDark ? '#64748b' : '#94a3b8', fontSize: '13px' }}>
             Chưa có bình luận. Hãy là người đầu tiên!
           </div>
         )}
@@ -574,22 +587,29 @@ function PostDetail({
 
 // ─── CreatePostModal ──────────────────────────────────────────────────────────
 
-function CreatePostModal({
-  isDark, authFetch, onClose, onCreated,
-}: {
+function CreatePostModal({ isDark, authFetch, onClose, onCreated }: {
   isDark: boolean
   authFetch: (url: string, options?: RequestInit) => Promise<Response>
   onClose: () => void
   onCreated: (post: ForumPost) => void
 }) {
-  const [title, setTitle]     = useState('')
-  const [content, setContent] = useState('')
+  const [title, setTitle]       = useState('')
+  const [content, setContent]   = useState('')
+  const [selectedTagIds, setSelectedTagIds] = useState<number[]>([])
+  const [allTags, setAllTags]   = useState<ForumTag[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [aiLoading, setAiLoading]   = useState(false)
-  const [err, setErr]         = useState('')
-  const [aiErr, setAiErr]     = useState('')
+  const [err, setErr]           = useState('')
+  const [aiErr, setAiErr]       = useState('')
 
-  // ── AI draft ──
+  // Load tags once
+  useEffect(() => {
+    authFetch('/api/forum/tags')
+      .then(r => r.json())
+      .then((d: any) => { if (d.tags) setAllTags(d.tags) })
+      .catch(() => {})
+  }, [authFetch])
+
   const handleAIDraft = async () => {
     setAiErr('')
     setAiLoading(true)
@@ -599,6 +619,10 @@ function CreatePostModal({
       if (res.ok && data.success) {
         setTitle(data.title)
         setContent(data.content)
+        // Auto-select AI-suggested tags
+        if (Array.isArray(data.suggested_tag_ids) && data.suggested_tag_ids.length > 0) {
+          setSelectedTagIds(data.suggested_tag_ids.slice(0, 5))
+        }
         setErr('')
       } else {
         setAiErr(data.message || 'AI không thể tạo bài lúc này.')
@@ -609,15 +633,14 @@ function CreatePostModal({
 
   const handleSubmit = async () => {
     setErr('')
-    if (!title.trim())             { setErr('Vui lòng nhập tiêu đề.'); return }
-    if (title.trim().length < 5)   { setErr('Tiêu đề phải có ít nhất 5 ký tự.'); return }
-    if (!content.trim())           { setErr('Vui lòng nhập nội dung.'); return }
+    if (!title.trim())           { setErr('Vui lòng nhập tiêu đề.'); return }
+    if (title.trim().length < 5) { setErr('Tiêu đề phải có ít nhất 5 ký tự.'); return }
+    if (!content.trim())         { setErr('Vui lòng nhập nội dung.'); return }
     setSubmitting(true)
     try {
       const res  = await authFetch('/api/forum/posts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: title.trim(), content: content.trim() }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: title.trim(), content: content.trim(), tag_ids: selectedTagIds }),
       })
       const data = await res.json() as any
       if (res.ok) { onCreated(data.post); onClose() }
@@ -644,7 +667,7 @@ function CreatePostModal({
         background: isDark ? '#0f172a' : '#ffffff',
         border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : '#e2e8f0'}`,
         borderRadius: '16px', padding: '24px',
-        width: '100%', maxWidth: '580px',
+        width: '100%', maxWidth: '600px',
         display: 'flex', flexDirection: 'column', gap: '14px',
         boxShadow: '0 20px 60px rgba(0,0,0,0.4)',
         maxHeight: '90vh', overflowY: 'auto',
@@ -654,49 +677,28 @@ function CreatePostModal({
           <h2 style={{ fontSize: '17px', fontWeight: 700, color: isDark ? '#e2e8f0' : '#0f172a', margin: 0 }}>
             ✍️ Tạo bài viết mới
           </h2>
-          {/* AI Draft button */}
           <button
-            onClick={handleAIDraft}
-            disabled={aiLoading}
+            onClick={handleAIDraft} disabled={aiLoading}
             style={{
-              background: aiLoading
-                ? (isDark ? 'rgba(99,102,241,0.12)' : '#ede9fe')
-                : 'linear-gradient(135deg,#6366f1,#8b5cf6)',
+              background: aiLoading ? (isDark ? 'rgba(99,102,241,0.12)' : '#ede9fe') : 'linear-gradient(135deg,#6366f1,#8b5cf6)',
               border: `1px solid ${isDark ? 'rgba(99,102,241,0.4)' : '#818cf8'}`,
               borderRadius: '8px', padding: '7px 14px',
               color: aiLoading ? (isDark ? '#818cf8' : '#6366f1') : '#fff',
               fontSize: '12px', fontWeight: 600, cursor: aiLoading ? 'wait' : 'pointer',
               display: 'flex', alignItems: 'center', gap: '6px',
-              transition: 'all 0.15s', flexShrink: 0,
-              opacity: aiLoading ? 0.8 : 1,
+              transition: 'all 0.15s', flexShrink: 0, opacity: aiLoading ? 0.8 : 1,
             }}
             title="AI đọc dữ liệu học tập của bạn và viết bài thay bạn"
           >
             {aiLoading ? (
-              <>
-                <span style={{
-                  display: 'inline-block', width: '12px', height: '12px',
-                  border: `2px solid ${isDark ? '#818cf8' : '#6366f1'}`,
-                  borderTopColor: 'transparent', borderRadius: '50%',
-                  animation: 'spin 0.7s linear infinite',
-                }}/>
-                AI đang viết…
-              </>
-            ) : (
-              <>✨ Nhờ AI viết hộ</>
-            )}
+              <><span style={{ display: 'inline-block', width: '12px', height: '12px', border: `2px solid ${isDark ? '#818cf8' : '#6366f1'}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }}/>AI đang viết…</>
+            ) : <>✨ Nhờ AI viết hộ</>}
           </button>
         </div>
 
-        {/* AI description callout */}
-        <div style={{
-          background: isDark ? 'rgba(99,102,241,0.08)' : '#f0f0ff',
-          border: `1px solid ${isDark ? 'rgba(99,102,241,0.2)' : '#c7d2fe'}`,
-          borderRadius: '8px', padding: '10px 12px',
-          fontSize: '12px', color: isDark ? '#a5b4fc' : '#4338ca',
-          lineHeight: 1.5,
-        }}>
-          💡 <strong>AI viết hộ:</strong> AI sẽ đọc dữ liệu học tập thực tế của bạn, rồi viết một bài thảo luận chân thực — như thể chính bạn đang chia sẻ. Bạn có thể chỉnh sửa lại trước khi đăng.
+        {/* AI callout */}
+        <div style={{ background: isDark ? 'rgba(99,102,241,0.08)' : '#f0f0ff', border: `1px solid ${isDark ? 'rgba(99,102,241,0.2)' : '#c7d2fe'}`, borderRadius: '8px', padding: '10px 12px', fontSize: '12px', color: isDark ? '#a5b4fc' : '#4338ca', lineHeight: 1.5 }}>
+          💡 <strong>AI viết hộ:</strong> AI sẽ đọc dữ liệu học tập thực tế của bạn, rồi viết một bài thảo luận chân thực — và tự gợi ý thể loại phù hợp. Bạn có thể chỉnh sửa lại trước khi đăng.
         </div>
 
         {aiErr && (
@@ -705,24 +707,34 @@ function CreatePostModal({
           </div>
         )}
 
+        {/* Title */}
         <div>
           <label style={{ fontSize: '12px', color: isDark ? '#94a3b8' : '#64748b', fontWeight: 600, display: 'block', marginBottom: '6px' }}>Tiêu đề *</label>
           <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Nhập tiêu đề bài viết…" style={inputStyle} maxLength={200} />
         </div>
 
+        {/* Content */}
         <div>
           <label style={{ fontSize: '12px', color: isDark ? '#94a3b8' : '#64748b', fontWeight: 600, display: 'block', marginBottom: '6px' }}>Nội dung *</label>
           <textarea
             value={content} onChange={e => setContent(e.target.value)}
             placeholder="Chia sẻ kinh nghiệm, đặt câu hỏi hoặc thảo luận về việc học tập…"
-            rows={8}
+            rows={7}
             style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.6 }}
             maxLength={10000}
           />
-          <div style={{ fontSize: '11px', color: isDark ? '#64748b' : '#94a3b8', marginTop: '4px', textAlign: 'right' }}>
-            {content.length}/10000
-          </div>
+          <div style={{ fontSize: '11px', color: isDark ? '#64748b' : '#94a3b8', marginTop: '4px', textAlign: 'right' }}>{content.length}/10000</div>
         </div>
+
+        {/* Tag selector */}
+        {allTags.length > 0 && (
+          <TagSelector
+            tags={allTags}
+            selected={selectedTagIds}
+            onChange={setSelectedTagIds}
+            isDark={isDark}
+          />
+        )}
 
         {err && (
           <div style={{ fontSize: '13px', color: '#ef4444', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '8px', padding: '8px 12px' }}>
@@ -731,17 +743,8 @@ function CreatePostModal({
         )}
 
         <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-          <button onClick={onClose} style={{
-            background: 'transparent', border: `1px solid ${isDark ? 'rgba(255,255,255,0.12)' : '#e2e8f0'}`,
-            borderRadius: '8px', padding: '8px 18px',
-            color: isDark ? '#94a3b8' : '#64748b', fontSize: '13px', cursor: 'pointer',
-          }}>Hủy</button>
-          <button onClick={handleSubmit} disabled={submitting} style={{
-            background: 'linear-gradient(135deg,#6366f1,#8b5cf6)',
-            border: 'none', borderRadius: '8px', padding: '8px 20px',
-            color: '#fff', fontSize: '13px', fontWeight: 600, cursor: 'pointer',
-            opacity: submitting ? 0.6 : 1,
-          }}>
+          <button onClick={onClose} style={{ background: 'transparent', border: `1px solid ${isDark ? 'rgba(255,255,255,0.12)' : '#e2e8f0'}`, borderRadius: '8px', padding: '8px 18px', color: isDark ? '#94a3b8' : '#64748b', fontSize: '13px', cursor: 'pointer' }}>Hủy</button>
+          <button onClick={handleSubmit} disabled={submitting} style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', border: 'none', borderRadius: '8px', padding: '8px 20px', color: '#fff', fontSize: '13px', fontWeight: 600, cursor: 'pointer', opacity: submitting ? 0.6 : 1 }}>
             {submitting ? 'Đang đăng…' : '🚀 Đăng bài'}
           </button>
         </div>
@@ -753,9 +756,7 @@ function CreatePostModal({
 
 // ─── NavBar ───────────────────────────────────────────────────────────────────
 
-function NavBar({
-  isDark, displayName, email, onNavigate, currentPage, onToggleTheme, onChangePass, onLogout,
-}: {
+function NavBar({ isDark, displayName, email, onNavigate, currentPage, onToggleTheme, onChangePass, onLogout }: {
   isDark: boolean; displayName: string; email: string
   onNavigate: (p: any) => void; currentPage: string
   onToggleTheme?: () => void; onChangePass: () => void; onLogout: () => void
@@ -770,17 +771,9 @@ function NavBar({
       display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px',
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
-        <button onClick={() => onNavigate('dashboard')} style={{
-          display: 'flex', alignItems: 'center', gap: '6px',
-          background: 'transparent', border: 'none', cursor: 'pointer', padding: '4px 8px', borderRadius: '8px',
-        }}>
+        <button onClick={() => onNavigate('dashboard')} style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'transparent', border: 'none', cursor: 'pointer', padding: '4px 8px', borderRadius: '8px' }}>
           <span style={{ fontSize: '16px', filter: 'drop-shadow(0 0 6px rgba(99,102,241,0.6))' }}>📡</span>
-          <span style={{
-            fontFamily: 'Space Grotesk, sans-serif', fontSize: '14px', fontWeight: 700,
-            background: 'linear-gradient(90deg, #22d3ee, #818cf8, #a855f7)',
-            WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-            backgroundClip: 'text', letterSpacing: '-0.3px', whiteSpace: 'nowrap',
-          }}>LSR Engine</span>
+          <span style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: '14px', fontWeight: 700, background: 'linear-gradient(90deg, #22d3ee, #818cf8, #a855f7)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text', letterSpacing: '-0.3px', whiteSpace: 'nowrap' }}>LSR Engine</span>
         </button>
         <div style={{ display: 'flex', gap: '2px' }}>
           {NAV.map(({ id, label }) => (
@@ -796,34 +789,15 @@ function NavBar({
         </div>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-        <button onClick={onToggleTheme} style={{
-          padding: '4px 10px', borderRadius: '8px', flexShrink: 0,
-          border: `1px solid ${isDark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.18)'}`,
-          background: isDark ? 'rgba(2,6,23,0.85)' : 'rgba(255,255,255,0.92)',
-          color: isDark ? '#e2e8f0' : '#0f172a', fontSize: '13px', cursor: 'pointer',
-          fontFamily: 'Space Grotesk, sans-serif', fontWeight: 600,
-          display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap',
-        }}>
+        <button onClick={onToggleTheme} style={{ padding: '4px 10px', borderRadius: '8px', flexShrink: 0, border: `1px solid ${isDark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.18)'}`, background: isDark ? 'rgba(2,6,23,0.85)' : 'rgba(255,255,255,0.92)', color: isDark ? '#e2e8f0' : '#0f172a', fontSize: '13px', cursor: 'pointer', fontFamily: 'Space Grotesk, sans-serif', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}>
           {isDark ? '☀️' : '🌙'} <span style={{ fontSize: '11px' }}>{isDark ? 'Sáng' : 'Tối'}</span>
         </button>
         <div style={{ textAlign: 'right', minWidth: 0 }}>
           <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'Space Grotesk, sans-serif', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '120px' }}>{displayName}</div>
           <div style={{ fontSize: '9px', color: 'var(--nav-email)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '120px' }}>{email}</div>
         </div>
-        <button onClick={onChangePass} style={{
-          padding: '4px 10px', borderRadius: '8px', flexShrink: 0,
-          border: `1px solid ${isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)'}`,
-          background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)',
-          color: 'var(--nav-logout)', fontSize: '11px', cursor: 'pointer',
-          fontFamily: 'Space Grotesk, sans-serif', fontWeight: 500, whiteSpace: 'nowrap',
-        }}>🔐 Đổi MK</button>
-        <button onClick={onLogout} style={{
-          padding: '4px 10px', borderRadius: '8px', flexShrink: 0,
-          border: `1px solid ${isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)'}`,
-          background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)',
-          color: 'var(--nav-logout)', fontSize: '11px', cursor: 'pointer',
-          fontFamily: 'Space Grotesk, sans-serif', fontWeight: 500, whiteSpace: 'nowrap',
-        }}>Đăng xuất</button>
+        <button onClick={onChangePass} style={{ padding: '4px 10px', borderRadius: '8px', flexShrink: 0, border: `1px solid ${isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)'}`, background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)', color: 'var(--nav-logout)', fontSize: '11px', cursor: 'pointer', fontFamily: 'Space Grotesk, sans-serif', fontWeight: 500, whiteSpace: 'nowrap' }}>🔐 Đổi MK</button>
+        <button onClick={onLogout} style={{ padding: '4px 10px', borderRadius: '8px', flexShrink: 0, border: `1px solid ${isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)'}`, background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)', color: 'var(--nav-logout)', fontSize: '11px', cursor: 'pointer', fontFamily: 'Space Grotesk, sans-serif', fontWeight: 500, whiteSpace: 'nowrap' }}>Đăng xuất</button>
       </div>
     </nav>
   )
@@ -831,12 +805,12 @@ function NavBar({
 
 // ─── Main ForumPage ───────────────────────────────────────────────────────────
 
-export default function ForumPage({
-  user, authFetch, onLogout, onNavigate, currentPage, theme, onToggleTheme,
-}: Props) {
+export default function ForumPage({ user, authFetch, onLogout, onNavigate, currentPage, theme, onToggleTheme }: Props) {
   const isDark = theme === 'dark'
 
   const [posts, setPosts]           = useState<ForumPost[]>([])
+  const [allTags, setAllTags]       = useState<ForumTag[]>([])
+  const [activeTagSlug, setActiveTagSlug] = useState<string>('')
   const [totalPages, setTotalPages] = useState(1)
   const [page, setPage]             = useState(1)
   const [sort, setSort]             = useState<SortMode>('newest')
@@ -847,17 +821,26 @@ export default function ForumPage({
 
   const displayName = user.full_name?.trim() || user.email.split('@')[0]
 
-  const loadPosts = useCallback(async (p = 1, s: SortMode = sort) => {
+  // Load tag list once
+  useEffect(() => {
+    authFetch('/api/forum/tags')
+      .then(r => r.json())
+      .then((d: any) => { if (d.tags) setAllTags(d.tags) })
+      .catch(() => {})
+  }, [authFetch])
+
+  const loadPosts = useCallback(async (p = 1, s: SortMode = sort, tagSlug = activeTagSlug) => {
     setLoading(true)
     try {
-      const res  = await authFetch(`/api/forum/posts?page=${p}&limit=15&sort=${s}`)
+      const tagParam = tagSlug ? `&tag=${encodeURIComponent(tagSlug)}` : ''
+      const res  = await authFetch(`/api/forum/posts?page=${p}&limit=15&sort=${s}${tagParam}`)
       const data = await res.json() as any
       if (res.ok) { setPosts(data.posts); setTotalPages(data.total_pages); setPage(p) }
     } catch {}
     setLoading(false)
-  }, [authFetch, sort])
+  }, [authFetch, sort, activeTagSlug])
 
-  useEffect(() => { loadPosts(1, sort) }, [sort])
+  useEffect(() => { loadPosts(1, sort, activeTagSlug) }, [sort, activeTagSlug])
 
   const handleDelete = async (id: number) => {
     if (!confirm('Bạn có chắc muốn xóa bài viết này?')) return
@@ -865,6 +848,15 @@ export default function ForumPage({
       const res = await authFetch(`/api/forum/posts/${id}`, { method: 'DELETE' })
       if (res.ok) setPosts(prev => prev.filter(p => p.id !== id))
     } catch {}
+  }
+
+  const handleTagFilter = (slug: string) => {
+    if (activeTagSlug === slug) {
+      setActiveTagSlug('')
+    } else {
+      setActiveTagSlug(slug)
+      setPage(1)
+    }
   }
 
   const sortBtn = (mode: SortMode, label: string, icon: string) => {
@@ -899,11 +891,12 @@ export default function ForumPage({
         onLogout={onLogout}
       />
 
-      <div style={{ maxWidth: '720px', margin: '0 auto', padding: '24px 16px 80px' }}>
+      <div style={{ maxWidth: '760px', margin: '0 auto', padding: '24px 16px 80px' }}>
         {selectedPostId !== null ? (
           <PostDetail
             postId={selectedPostId} userId={user.id} isDark={isDark} authFetch={authFetch}
-            onBack={() => { setSelectedPostId(null); loadPosts(page, sort) }}
+            onBack={() => { setSelectedPostId(null); loadPosts(page, sort, activeTagSlug) }}
+            onTagClick={handleTagFilter}
           />
         ) : (
           <>
@@ -928,6 +921,74 @@ export default function ForumPage({
               </button>
             </div>
 
+            {/* Genre filter bar */}
+            {allTags.length > 0 && (
+              <div style={{
+                background: isDark ? 'rgba(255,255,255,0.03)' : '#ffffff',
+                border: `1px solid ${isDark ? 'rgba(255,255,255,0.07)' : '#e2e8f0'}`,
+                borderRadius: '12px', padding: '12px 14px', marginBottom: '14px',
+              }}>
+                <div style={{ fontSize: '11px', fontWeight: 700, color: isDark ? '#64748b' : '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '9px' }}>
+                  🏷️ Lọc theo thể loại
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                  {/* "All" pill */}
+                  <span
+                    onClick={() => handleTagFilter('')}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: '4px',
+                      background: !activeTagSlug ? (isDark ? 'rgba(99,102,241,0.25)' : '#ede9fe') : (isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9'),
+                      border: `1.5px solid ${!activeTagSlug ? '#6366f1' : (isDark ? 'rgba(255,255,255,0.1)' : '#e2e8f0')}`,
+                      borderRadius: '20px', padding: '3px 11px',
+                      fontSize: '12px', fontWeight: !activeTagSlug ? 700 : 500,
+                      color: !activeTagSlug ? '#818cf8' : (isDark ? '#94a3b8' : '#64748b'),
+                      cursor: 'pointer', userSelect: 'none',
+                      boxShadow: !activeTagSlug ? '0 0 0 2px rgba(99,102,241,0.2)' : 'none',
+                      transition: 'all 0.12s',
+                    }}
+                  >
+                    ✨ Tất cả
+                  </span>
+                  {allTags.map(tag => {
+                    const active = activeTagSlug === tag.slug
+                    return (
+                      <span
+                        key={tag.id}
+                        onClick={() => handleTagFilter(tag.slug)}
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', gap: '4px',
+                          background: active ? `${tag.color}30` : (isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9'),
+                          border: `1.5px solid ${active ? tag.color : (isDark ? 'rgba(255,255,255,0.1)' : '#e2e8f0')}`,
+                          borderRadius: '20px', padding: '3px 11px',
+                          fontSize: '12px', fontWeight: active ? 700 : 500,
+                          color: active ? tag.color : (isDark ? '#94a3b8' : '#64748b'),
+                          cursor: 'pointer', userSelect: 'none',
+                          boxShadow: active ? `0 0 0 2px ${tag.color}33` : 'none',
+                          transition: 'all 0.12s',
+                        }}
+                      >
+                        {tag.icon} {tag.label}
+                      </span>
+                    )
+                  })}
+                </div>
+                {activeTagSlug && (
+                  <div style={{ marginTop: '8px', fontSize: '11px', color: isDark ? '#64748b' : '#94a3b8' }}>
+                    Đang lọc:{' '}
+                    <strong style={{ color: allTags.find(t => t.slug === activeTagSlug)?.color }}>
+                      {allTags.find(t => t.slug === activeTagSlug)?.icon}{' '}
+                      {allTags.find(t => t.slug === activeTagSlug)?.label}
+                    </strong>
+                    {' — '}
+                    <span
+                      onClick={() => handleTagFilter('')}
+                      style={{ cursor: 'pointer', textDecoration: 'underline', color: isDark ? '#818cf8' : '#6366f1' }}
+                    >xóa bộ lọc</span>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Sort bar */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
               <span style={{ fontSize: '12px', color: isDark ? '#64748b' : '#94a3b8', fontWeight: 500 }}>Sắp xếp:</span>
@@ -939,20 +1000,26 @@ export default function ForumPage({
             {loading ? (
               <div style={{ textAlign: 'center', padding: '60px', color: isDark ? '#64748b' : '#94a3b8' }}>Đang tải…</div>
             ) : posts.length === 0 ? (
-              <div style={{
-                textAlign: 'center', padding: '60px 20px',
-                background: isDark ? 'rgba(255,255,255,0.03)' : '#ffffff',
-                border: `1px solid ${isDark ? 'rgba(255,255,255,0.07)' : '#e2e8f0'}`, borderRadius: '12px',
-              }}>
-                <div style={{ fontSize: '40px', marginBottom: '12px' }}>💬</div>
-                <div style={{ fontSize: '15px', fontWeight: 600, color: isDark ? '#94a3b8' : '#475569', marginBottom: '6px' }}>Chưa có bài viết nào</div>
-                <div style={{ fontSize: '13px', color: isDark ? '#64748b' : '#94a3b8' }}>Hãy là người đầu tiên chia sẻ!</div>
+              <div style={{ textAlign: 'center', padding: '60px 20px', background: isDark ? 'rgba(255,255,255,0.03)' : '#ffffff', border: `1px solid ${isDark ? 'rgba(255,255,255,0.07)' : '#e2e8f0'}`, borderRadius: '12px' }}>
+                <div style={{ fontSize: '40px', marginBottom: '12px' }}>{activeTagSlug ? '🔍' : '💬'}</div>
+                <div style={{ fontSize: '15px', fontWeight: 600, color: isDark ? '#94a3b8' : '#475569', marginBottom: '6px' }}>
+                  {activeTagSlug ? 'Không có bài viết nào trong thể loại này' : 'Chưa có bài viết nào'}
+                </div>
+                <div style={{ fontSize: '13px', color: isDark ? '#64748b' : '#94a3b8' }}>
+                  {activeTagSlug ? (
+                    <span onClick={() => handleTagFilter('')} style={{ cursor: 'pointer', color: isDark ? '#818cf8' : '#6366f1', textDecoration: 'underline' }}>Xem tất cả bài viết</span>
+                  ) : 'Hãy là người đầu tiên chia sẻ!'}
+                </div>
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 {posts.map(p => (
-                  <PostCard key={p.id} post={p} userId={user.id} isDark={isDark}
-                    onClick={() => setSelectedPostId(p.id)} onDelete={handleDelete} />
+                  <PostCard
+                    key={p.id} post={p} userId={user.id} isDark={isDark}
+                    onClick={() => setSelectedPostId(p.id)}
+                    onDelete={handleDelete}
+                    onTagClick={handleTagFilter}
+                  />
                 ))}
               </div>
             )}
@@ -961,7 +1028,7 @@ export default function ForumPage({
             {totalPages > 1 && (
               <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', marginTop: '24px' }}>
                 {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
-                  <button key={p} onClick={() => loadPosts(p, sort)} style={{
+                  <button key={p} onClick={() => loadPosts(p, sort, activeTagSlug)} style={{
                     width: '32px', height: '32px', borderRadius: '8px',
                     border: `1px solid ${p === page ? '#818cf8' : (isDark ? 'rgba(255,255,255,0.1)' : '#e2e8f0')}`,
                     background: p === page ? 'rgba(99,102,241,0.15)' : 'transparent',
