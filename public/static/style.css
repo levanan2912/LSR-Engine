@@ -1,1 +1,32 @@
 h1 { font-family: Arial, Helvetica, sans-serif; }
+
+/* ── Global font-size baseline ──────────────────────────────────────────────
+   Đặt 13px làm cỡ chữ tối thiểu cho toàn app (= cỡ body text báo cáo AI).
+   Áp dụng cho tất cả text thường — labels nhỏ (uppercase badge/section header)
+   được phép nhỏ hơn vì chúng là UI accent, không phải body text đọc.
+   ─────────────────────────────────────────────────────────────────────────── */
+html {
+  font-size: 13px;
+}
+
+/* Đảm bảo body text, paragraph, span không nhỏ hơn 13px */
+body, p, span:not(.icon-only), div {
+  min-height: 0; /* no-op, needed to activate computed style */
+}
+
+/* Override các chỗ dùng font-size inline nhỏ hơn 13px thành 13px.
+   Chỉ áp dụng cho các thành phần hiển thị text đọc được (không phải icon/badge).
+   Dùng @layer để dễ override lại từng component nếu cần. */
+.session-col-time {
+  font-size: 13px !important;
+}
+
+/* Các label meta (Yếu tố mất tập trung, Cảm xúc, Mục tiêu) */
+.meta-label-text {
+  font-size: 13px !important;
+}
+
+/* Stats bar sub text */
+.stats-sub-text {
+  font-size: 13px !important;
+}

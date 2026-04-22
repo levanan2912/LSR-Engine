@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { User, SessionWithReport, SessionReport, HistoryData } from '../types'
 import ChangePasswordModal from '../components/ChangePasswordModal'
 import ChatBot from '../components/ChatBot'
@@ -208,11 +208,12 @@ function ReportPanel({ report, riskLevel }: { report: SessionReport; riskLevel: 
 }
 
 // ─── Session Row ──────────────────────────────────────────────────────────────
-function SessionRow({ session, expandedKey, onToggle, isDark = true }: {
+function SessionRow({ session, expandedKey, onToggle, isDark = true, onDelete }: {
   session: SessionWithReport
   expandedKey: string | null
   onToggle: (k: string) => void
   isDark?: boolean
+  onDelete: (id: number, label: string) => void
 }) {
   const key    = `${session.session_date}-${session.session_number}`
   const isOpen = expandedKey === key
@@ -297,6 +298,20 @@ function SessionRow({ session, expandedKey, onToggle, isDark = true }: {
           {report ? <RiskBadge level={riskLvl} small /> : <span />}
         </div>
 
+        {/* Delete button */}
+        <button
+          onClick={e => { e.stopPropagation(); onDelete(session.id, `Phiên ${session.session_number} — ${session.session_date}`) }}
+          title="Xóa phiên này"
+          style={{
+            background: 'transparent', border: 'none', cursor: 'pointer',
+            color: 'rgba(239,68,68,0.45)', fontSize: '13px', padding: '2px 4px',
+            borderRadius: '5px', lineHeight: 1, transition: 'color 0.15s',
+            flexShrink: 0,
+          }}
+          onMouseEnter={e => (e.currentTarget.style.color = '#ef4444')}
+          onMouseLeave={e => (e.currentTarget.style.color = 'rgba(239,68,68,0.45)')}
+        >🗑</button>
+
         {/* Chevron */}
         <span style={{ color: 'var(--text-secondary, #94a3b8)', fontSize: '11px', transition: 'transform 0.2s', transform: isOpen ? 'rotate(90deg)' : 'none', textAlign: 'center' }}>▸</span>
       </div>
@@ -337,7 +352,7 @@ function SessionRow({ session, expandedKey, onToggle, isDark = true }: {
           )}
           {report
             ? <ReportPanel report={report} riskLevel={riskLvl} isDark={isDark} />
-            : <p style={{ color: 'var(--text-secondary, #94a3b8)', fontSize: '12px', fontStyle: 'italic', margin: 0 }}>Chưa có báo cáo AI cho phiên này.</p>
+            : <p style={{ color: 'var(--text-secondary, #94a3b8)', fontSize: '13px', fontStyle: 'italic', margin: 0 }}>Chưa có báo cáo AI cho phiên này.</p>
           }
         </div>
       )}
@@ -346,13 +361,14 @@ function SessionRow({ session, expandedKey, onToggle, isDark = true }: {
 }
 
 // ─── Day Group ────────────────────────────────────────────────────────────────
-function DayGroup({ date, sessions, expandedKey, onToggle, defaultOpen, isDark = true }: {
+function DayGroup({ date, sessions, expandedKey, onToggle, defaultOpen, isDark = true, onDelete }: {
   date: string
   sessions: SessionWithReport[]
   expandedKey: string | null
   onToggle: (k: string) => void
   defaultOpen: boolean
   isDark?: boolean
+  onDelete: (id: number, label: string) => void
 }) {
   const [open, setOpen] = useState(defaultOpen)
 
@@ -420,6 +436,7 @@ function DayGroup({ date, sessions, expandedKey, onToggle, defaultOpen, isDark =
               expandedKey={expandedKey}
               onToggle={onToggle}
               isDark={isDark}
+              onDelete={onDelete}
             />
           ))}
         </div>
@@ -538,9 +555,12 @@ function HistoryStreakBadge({ dates }: { dates: string[] }) {
 export default function HistoryPage({ user, authFetch, onLogout, onNavigate, currentPage, theme = 'dark', onToggleTheme }: Props) {
   const isDark = theme === 'dark'
   const [showChangePass, setShowChangePass] = useState(false)
-  const [historyData, setHistoryData] = useState<HistoryData | null>(null)
-  const [loading,     setLoading]     = useState(true)
-  const [expandedKey, setExpandedKey] = useState<string | null>(null)
+  const [historyData,   setHistoryData]   = useState<HistoryData | null>(null)
+  const [loading,       setLoading]       = useState(true)
+  const [expandedKey,   setExpandedKey]   = useState<string | null>(null)
+  const [deleteConfirm, setDeleteConfirm] = useState<{ id: number; label: string } | null>(null)
+  const [deleting,      setDeleting]      = useState(false)
+  const confirmRef = useRef<HTMLDivElement>(null)
 
   const loadHistory = useCallback(async () => {
     setLoading(true)
@@ -554,6 +574,44 @@ export default function HistoryPage({ user, authFetch, onLogout, onNavigate, cur
   useEffect(() => { loadHistory() }, [loadHistory])
 
   const toggleSession = (key: string) => setExpandedKey(prev => prev === key ? null : key)
+
+  const handleDeleteRequest = useCallback((id: number, label: string) => {
+    setDeleteConfirm({ id, label })
+  }, [])
+
+  const confirmDelete = useCallback(async () => {
+    if (!deleteConfirm || deleting) return
+    setDeleting(true)
+    try {
+      const res = await authFetch(`/api/entries/${deleteConfirm.id}`, { method: 'DELETE' })
+      if (res.ok) {
+        // Xóa khỏi local state không cần reload
+        setHistoryData(prev => {
+          if (!prev) return prev
+          const sessions = prev.sessions.filter(s => s.id !== deleteConfirm.id)
+          const grouped: typeof prev.grouped_by_date = {}
+          for (const s of sessions) {
+            if (!grouped[s.session_date]) grouped[s.session_date] = []
+            grouped[s.session_date].push(s)
+          }
+          return {
+            sessions,
+            grouped_by_date: grouped,
+            total_sessions: sessions.length,
+            total_days: Object.keys(grouped).length,
+          }
+        })
+        setDeleteConfirm(null)
+      } else {
+        const d = await res.json() as { message?: string }
+        alert(d.message ?? 'Xóa thất bại, vui lòng thử lại.')
+      }
+    } catch {
+      alert('Lỗi kết nối, vui lòng thử lại.')
+    } finally {
+      setDeleting(false)
+    }
+  }, [deleteConfirm, deleting, authFetch])
 
   // Show ALL dates (including sessions without AI report)
   const dates = historyData
@@ -757,6 +815,7 @@ export default function HistoryPage({ user, authFetch, onLogout, onNavigate, cur
                   expandedKey={expandedKey} onToggle={toggleSession}
                   defaultOpen={idx === 0}
                   isDark={isDark}
+                  onDelete={handleDeleteRequest}
                 />
               ))}
             </div>
@@ -768,6 +827,72 @@ export default function HistoryPage({ user, authFetch, onLogout, onNavigate, cur
       <div style={{ position: 'fixed', bottom: '14px', right: '84px', zIndex: 999, opacity: 0.45, pointerEvents: 'none' }}>
         <img src="/static/and-logo.png" alt="A.N.D" style={{ width: '56px', height: 'auto', display: 'block' }} />
       </div>
+
+      {/* ── Delete confirm modal ── */}
+      {deleteConfirm && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 2000,
+          background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(4px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          padding: '20px',
+        }} onClick={() => !deleting && setDeleteConfirm(null)}>
+          <div
+            ref={confirmRef}
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: isDark ? '#0f172a' : '#fff',
+              border: '1px solid rgba(239,68,68,0.35)',
+              borderRadius: '16px', padding: '28px 28px 24px',
+              maxWidth: '360px', width: '100%',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+            }}
+          >
+            <div style={{ fontSize: '32px', textAlign: 'center', marginBottom: '12px' }}>🗑️</div>
+            <h3 style={{
+              fontFamily: 'Space Grotesk, sans-serif', fontSize: '15px', fontWeight: 700,
+              color: isDark ? '#f1f5f9' : '#0f172a', textAlign: 'center', margin: '0 0 8px',
+            }}>Xác nhận xóa phiên học</h3>
+            <p style={{
+              fontSize: '13px', color: isDark ? '#94a3b8' : '#64748b',
+              textAlign: 'center', lineHeight: 1.6, margin: '0 0 20px',
+            }}>
+              <strong style={{ color: isDark ? '#e2e8f0' : '#1e293b' }}>{deleteConfirm.label}</strong>
+              <br />Hành động này không thể hoàn tác. Báo cáo AI liên quan cũng sẽ bị xóa.
+            </p>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                onClick={() => setDeleteConfirm(null)}
+                disabled={deleting}
+                style={{
+                  flex: 1, padding: '10px', borderRadius: '10px',
+                  background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)',
+                  border: isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.1)',
+                  color: isDark ? '#94a3b8' : '#64748b',
+                  fontSize: '13px', fontWeight: 600, cursor: 'pointer',
+                  fontFamily: 'Space Grotesk, sans-serif',
+                }}
+              >Hủy</button>
+              <button
+                onClick={confirmDelete}
+                disabled={deleting}
+                style={{
+                  flex: 1, padding: '10px', borderRadius: '10px',
+                  background: deleting ? 'rgba(239,68,68,0.5)' : 'rgba(239,68,68,0.85)',
+                  border: '1px solid rgba(239,68,68,0.4)',
+                  color: '#fff', fontSize: '13px', fontWeight: 700,
+                  cursor: deleting ? 'not-allowed' : 'pointer',
+                  fontFamily: 'Space Grotesk, sans-serif',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                }}
+              >
+                {deleting
+                  ? <><span style={{ display: 'inline-block', width: '12px', height: '12px', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} /> Đang xóa...</>
+                  : '🗑️ Xóa phiên này'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ChatBot — pass most recent report for context */}
       <ChatBot
@@ -783,6 +908,7 @@ export default function HistoryPage({ user, authFetch, onLogout, onNavigate, cur
       />
 
       <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
         * { scrollbar-width: thin; scrollbar-color: rgba(99,102,241,0.2) transparent; }
         *::-webkit-scrollbar { width: 3px; }
         *::-webkit-scrollbar-track { background: transparent; }
@@ -795,8 +921,8 @@ export default function HistoryPage({ user, authFetch, onLogout, onNavigate, cur
         /* Session row: stack on mobile */
         .session-row-grid {
           display: grid;
-          grid-template-columns: 90px 62px 80px 160px 160px 180px 1fr 24px;
-          gap: 0 16px;
+          grid-template-columns: 90px 62px 80px 160px 160px 180px 1fr 24px 24px;
+          gap: 0 12px;
         }
         .session-row-meta { display: flex; align-items: center; gap: 5px; }
 
@@ -810,7 +936,7 @@ export default function HistoryPage({ user, authFetch, onLogout, onNavigate, cur
           .session-col-distract,
           .session-col-focus,
           .session-col-dropout { display: none !important; }
-          .session-col-hours { font-size: 12px !important; }
+          .session-col-hours { font-size: 13px !important; }
         }
 
         @media (max-width: 700px) {

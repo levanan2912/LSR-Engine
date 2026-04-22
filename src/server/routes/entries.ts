@@ -452,6 +452,41 @@ entries.get('/pending', async (c) => {
   return c.json({ pending: null })
 })
 
+// ─── DELETE /api/entries/:id ──────────────────────────────────────────────────
+// Xóa một phiên học (và báo cáo AI đi kèm nếu có).
+// Chỉ xóa được phiên thuộc về user đang đăng nhập.
+
+entries.delete('/:id', async (c) => {
+  const userId  = c.get('userId')
+  const entryId = parseInt(c.req.param('id'))
+  if (isNaN(entryId)) return c.json({ error: 'Invalid entry ID' }, 400)
+
+  try {
+    // Xác minh entry thuộc về user này
+    const entry = await c.env.DB.prepare(
+      'SELECT id, session_date, session_number FROM daily_entries WHERE id = ? AND user_id = ?'
+    ).bind(entryId, userId).first<{ id: number; session_date: string; session_number: number }>()
+
+    if (!entry) return c.json({ error: 'Phiên học không tồn tại hoặc không có quyền xóa' }, 404)
+
+    // Xóa báo cáo AI trước (FK constraint)
+    await c.env.DB.prepare('DELETE FROM analysis_reports WHERE entry_id = ? AND user_id = ?')
+      .bind(entryId, userId).run()
+
+    // Xóa entry
+    await c.env.DB.prepare('DELETE FROM daily_entries WHERE id = ? AND user_id = ?')
+      .bind(entryId, userId).run()
+
+    console.log(`🗑️ Đã xóa entry ${entryId} (${entry.session_date} S${entry.session_number}) của user ${userId}`)
+    return c.json({ success: true, message: `Đã xóa phiên ${entry.session_number} ngày ${entry.session_date}` })
+
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error(`[StudySignal] Xóa entry ${entryId} thất bại:`, msg)
+    return c.json({ error: 'Xóa thất bại', message: msg }, 500)
+  }
+})
+
 // ─── GET /api/entries ─────────────────────────────────────────────────────────
 // ?days=14  — kept for backward compat (ignored; limit param drives row count)
 // ?limit=20 — max sessions to return, ordered oldest→newest for chart rendering

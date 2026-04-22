@@ -189,9 +189,9 @@ export default function AnalysisReportComponent({ report, loading }: Props) {
   const meta = getModelMeta(report.analyzed_by ?? undefined)
 
   const ts = report.created_at
-    ? new Date(new Date(report.created_at).getTime() + 7 * 3600000).toLocaleString('vi-VN', {
+    ? new Date(report.created_at).toLocaleString('vi-VN', {
         day: '2-digit', month: '2-digit', year: 'numeric',
-        hour: '2-digit', minute: '2-digit', timeZone: 'UTC',
+        hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Ho_Chi_Minh',
       })
     : report.report_date
 
