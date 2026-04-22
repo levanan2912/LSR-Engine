@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { User, DailyEntry, AnalysisReport, EntryFormData } from '../types'
 import EntryForm, { EntryFormRef } from '../components/EntryForm'
-import TrendChart from '../components/TrendChart'
-import AnalysisReportComponent from '../components/AnalysisReport'
 import { ToastContainer, useToast } from '../components/Toast'
 import DuplicateModal, { TodaySession } from '../components/DuplicateModal'
 import ChangePasswordModal from '../components/ChangePasswordModal'
 import ChatBot from '../components/ChatBot'
+import ResultSlide from '../components/ResultSlide'
 
 interface DashboardProps {
   user: User
@@ -163,6 +162,7 @@ export default function Dashboard({ user, authFetch, onLogout, onNavigate, curre
   const [submitStatus,  setSubmitStatus]  = useState<SubmitStatus>({ type: 'idle', message: '' })
   const [todaySessions, setTodaySessions] = useState<TodaySession[] | null>(null)
   const [sessionDate,   setSessionDate]   = useState('')
+  const [showResult,    setShowResult]    = useState(false)
   const pendingData  = useRef<EntryFormData | null>(null)
   const statusTimer  = useRef<ReturnType<typeof setTimeout> | null>(null)
   const formRef      = useRef<EntryFormRef>(null)
@@ -332,6 +332,7 @@ export default function Dashboard({ user, authFetch, onLogout, onNavigate, curre
       else            toast.success(`Phiên ${sessionNumber} đã lưu`, 'Phân tích AI hoàn thành.')
 
       setAnalyzing(false)
+      setShowResult(true)   // ← mở ResultSlide
       await loadData()
 
     } catch (err) {
@@ -504,44 +505,42 @@ export default function Dashboard({ user, authFetch, onLogout, onNavigate, curre
             </div>
           </div>
 
-          {/* Chart — compact strip pinned to the bottom of left column */}
-          <div style={{ flexShrink: 0, padding: '4px 10px 8px' }}>
-            <div style={{
-              background: 'var(--bg-card-strong, rgba(255,255,255,0.02))',
-              border: '1px solid var(--border-card, rgba(255,255,255,0.05))',
-              borderRadius: '12px', padding: '5px 12px 6px',
-              boxShadow: 'var(--card-shadow)',
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <span style={{ fontSize: '11px' }}>📈</span>
-                  <span style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: '9px', fontWeight: 700, color: 'var(--trend-title)', textTransform: 'uppercase', letterSpacing: '0.8px' }}>Xu hướng</span>
-                </div>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  {[{ color: '#6366f1', label: 'Giờ' }, { color: '#34d399', label: 'Focus' }, { color: '#f87171', label: 'Dropout', dashed: true }].map(({ color, label, dashed }) => (
-                    <span key={label} style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
-                      <span style={{ display: 'inline-block', width: '10px', height: '2px', background: color, borderTop: dashed ? `2px dashed ${color}` : undefined }} />
-                      <span style={{ color: 'var(--trend-legend)', fontSize: '9px' }}>{label}</span>
-                    </span>
-                  ))}
-                </div>
-              </div>
-              <TrendChart entries={entries} compact />
-            </div>
-          </div>
         </div>
 
-        {/* ── Right column: AI Report (scrollable) ── */}
+        {/* ── Right column: prompt card ── */}
         <div className="col-right" style={{ overflowY: 'auto', padding: '10px', minHeight: 0 }}>
           <div style={{
             background: 'var(--bg-card, rgba(255,255,255,0.03))',
             border: '1px solid var(--border-card, rgba(255,255,255,0.07))',
-            borderRadius: '14px', padding: '12px 16px',
+            borderRadius: '14px', padding: '24px 20px',
             minHeight: 'calc(100% - 20px)',
             boxShadow: 'var(--card-shadow)',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+            textAlign: 'center', gap: '16px',
           }}>
-            <SectionHeader icon="🤖" title="Kết quả phân tích AI" />
-            <AnalysisReportComponent report={analyzing ? null : report} loading={analyzing} />
+            {report ? (
+              <>
+                <div style={{ fontSize: '40px', opacity: 0.7 }}>📊</div>
+                <div style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)' }}>Đã có báo cáo phân tích</div>
+                <div style={{ fontSize: '12px', color: 'var(--text-muted, #64748b)', lineHeight: 1.6, maxWidth: '240px' }}>Điền nhật ký và nhấn phân tích để xem kết quả mới nhất</div>
+                <button
+                  onClick={() => setShowResult(true)}
+                  style={{
+                    marginTop: '4px', padding: '10px 24px', borderRadius: '12px',
+                    background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.35)',
+                    color: '#a5b4fc', fontSize: '13px', fontWeight: 600,
+                    fontFamily: 'Space Grotesk, sans-serif', cursor: 'pointer',
+                    transition: 'all 0.15s',
+                  }}
+                >📡 Xem báo cáo gần nhất</button>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: '40px', opacity: 0.3 }}>🧠</div>
+                <div style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)' }}>Chưa có báo cáo AI</div>
+                <div style={{ fontSize: '12px', color: 'var(--text-muted, #64748b)', lineHeight: 1.6, maxWidth: '240px' }}>Điền nhật ký học tập và nhấn ⚡ Phân tích bằng AI để bắt đầu</div>
+              </>
+            )}
           </div>
         </div>
 
@@ -554,6 +553,17 @@ export default function Dashboard({ user, authFetch, onLogout, onNavigate, curre
 
       {/* ChatBot */}
       <ChatBot authFetch={authFetch} theme={theme} report={report} />
+
+      {/* ResultSlide — hiện sau khi submit thành công */}
+      {showResult && (
+        <ResultSlide
+          report={report}
+          analyzing={analyzing}
+          entries={entries}
+          onClose={() => setShowResult(false)}
+          theme={theme}
+        />
+      )}
 
       <style>{`
         @keyframes spin       { to { transform: rotate(360deg); } }

@@ -96,86 +96,111 @@ function DaySummaryBar({ sessions }: { sessions: SessionWithReport[] }) {
 }
 
 // ─── Report Panel ─────────────────────────────────────────────────────────────
-// Styled to match the dashboard MiniCard heading style
-function ReportPanel({ report, riskLevel, isDark = true }: { report: SessionReport; riskLevel: string; isDark?: boolean }) {
-  const rs = riskStyle(riskLevel)
+// Mirrors AnalysisReport.tsx layout exactly (left-border card style, no monitoring_protocol, no primary_risk_driver)
+function ReportPanel({ report, riskLevel }: { report: SessionReport; riskLevel: string }) {
+  const [checkedItems, setCheckedItems] = useState<Record<number, boolean>>({})
   const riskColor = riskLevel === 'High Risk' ? '#f87171' : riskLevel === 'Fluctuating' ? '#fbbf24' : '#34d399'
 
-  // MiniCard replica matching dashboard AnalysisReport style
-  const Card = ({ icon, title, accentColor, children }: {
-    icon: string; title: string; accentColor: string; children: React.ReactNode
-  }) => (
-    <div style={{
-      background: isDark
-        ? 'var(--bg-card, rgba(255,255,255,0.02))'
-        : `${accentColor}0a`,           /* subtle tint of accent on light bg */
-      border: `1px solid ${accentColor}${isDark ? '30' : '50'}`,   /* stronger border in light mode */
-      borderRadius: '10px', padding: '10px 12px',
-      boxShadow: isDark ? 'var(--card-shadow)' : `0 1px 4px rgba(0,0,0,0.06)`,
-    }}>
-      {/* Heading row — matches dashboard MiniCard */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '7px' }}>
-        <span style={{ fontSize: '13px' }}>{icon}</span>
-        <span style={{
-          fontFamily: 'Space Grotesk, sans-serif',
-          color: accentColor,
-          fontSize: '9px', fontWeight: 700,
-          textTransform: 'uppercase', letterSpacing: '0.7px',
-        }}>{title}</span>
-      </div>
-      {children}
-    </div>
-  )
+  const toggleCheck = (i: number) => setCheckedItems(prev => ({ ...prev, [i]: !prev[i] }))
 
   return (
-    <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+    <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
 
+      {/* ── Key Signals ── */}
       {report.key_signals.length > 0 && (
-        <Card icon="⚠️" title="Tín hiệu phát hiện" accentColor="#fbbf24">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+        <div style={{
+          background: 'var(--bg-card, rgba(255,255,255,0.02))',
+          border: '1px solid rgba(251,191,36,0.25)',
+          borderLeft: '3px solid #fbbf24',
+          borderRadius: '10px', padding: '12px 14px',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
+            <span style={{ fontSize: '14px' }}>⚠️</span>
+            <span style={{ fontFamily: 'Space Grotesk, sans-serif', color: '#fbbf24', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px' }}>Tín hiệu phát hiện</span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '7px' }}>
             {report.key_signals.map((s, i) => (
-              <div key={i} style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
-                <span style={{ color: '#6366f1', fontSize: '11px', marginTop: '2px', flexShrink: 0 }}>▸</span>
-                <span style={{ color: 'var(--text-primary)', fontSize: '12px', lineHeight: 1.55 }}>{s}</span>
+              <div key={i} style={{
+                display: 'flex', alignItems: 'flex-start', gap: '8px',
+                padding: '7px 10px', background: 'rgba(251,191,36,0.06)',
+                borderRadius: '7px', border: '1px solid rgba(251,191,36,0.12)',
+              }}>
+                <span style={{ color: '#fbbf24', fontSize: '10px', marginTop: '3px', flexShrink: 0, fontWeight: 700 }}>#{i + 1}</span>
+                <span style={{ color: 'var(--text-primary)', fontSize: '12.5px', lineHeight: 1.55, fontWeight: 500 }}>{s}</span>
               </div>
             ))}
           </div>
-        </Card>
+        </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-        {report.short_term_forecast && (
-          <Card icon="🔮" title="Dự báo 5–7 phiên tới" accentColor="#818cf8">
-            <p style={{ color: 'var(--text-primary)', fontSize: '11px', lineHeight: 1.55, margin: 0 }}>{report.short_term_forecast}</p>
-          </Card>
-        )}
-        {report.primary_risk_driver && (
-          <Card icon="🎯" title="Vấn đề cốt lõi" accentColor={riskColor}>
-            <p style={{ color: 'var(--text-primary)', fontSize: '11px', lineHeight: 1.55, margin: 0 }}>{report.primary_risk_driver}</p>
-          </Card>
-        )}
-      </div>
+      {/* ── Forecast ── */}
+      {report.short_term_forecast && (
+        <div style={{
+          background: 'var(--bg-card, rgba(255,255,255,0.02))',
+          border: '1px solid rgba(129,140,248,0.25)',
+          borderLeft: '3px solid #818cf8',
+          borderRadius: '10px', padding: '12px 14px',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+            <span style={{ fontSize: '14px' }}>🔮</span>
+            <span style={{ fontFamily: 'Space Grotesk, sans-serif', color: '#818cf8', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px' }}>Dự báo 5–7 phiên tới</span>
+          </div>
+          <p style={{ color: 'var(--text-primary)', fontSize: '12.5px', lineHeight: 1.65, margin: 0 }}>{report.short_term_forecast}</p>
+        </div>
+      )}
 
+      {/* ── Intervention ── */}
       {report.intervention_strategy && (
-        <Card icon="💡" title="Chiến lược can thiệp" accentColor="#34d399">
-          <p style={{ color: 'var(--text-primary)', fontSize: '12px', lineHeight: 1.55, margin: 0 }}>{report.intervention_strategy}</p>
-        </Card>
+        <div style={{
+          background: `linear-gradient(135deg, ${riskColor}10, ${riskColor}04)`,
+          border: `1px solid ${riskColor}30`,
+          borderLeft: `3px solid ${riskColor}`,
+          borderRadius: '10px', padding: '12px 14px',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+            <span style={{ fontSize: '14px' }}>💡</span>
+            <span style={{ fontFamily: 'Space Grotesk, sans-serif', color: riskColor, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px' }}>Chiến lược can thiệp</span>
+          </div>
+          <p style={{ color: 'var(--text-primary)', fontSize: '12.5px', lineHeight: 1.65, margin: 0 }}>{report.intervention_strategy}</p>
+        </div>
       )}
 
+      {/* ── Action Plan ── */}
       {report.action_plan_48h.length > 0 && (
-        <Card icon="📋" title="Kế hoạch hành động 48h" accentColor="#6366f1">
-          <ol style={{ margin: 0, paddingLeft: '16px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            {report.action_plan_48h.map((step, i) => (
-              <li key={i} style={{ color: 'var(--text-primary)', fontSize: '12px', lineHeight: 1.55 }}>{step}</li>
-            ))}
-          </ol>
-        </Card>
-      )}
-
-      {report.monitoring_protocol && (
-        <Card icon="🔔" title="Giao thức giám sát" accentColor={riskColor}>
-          <p style={{ color: 'var(--text-primary)', fontSize: '11px', lineHeight: 1.55, margin: 0 }}>{report.monitoring_protocol}</p>
-        </Card>
+        <div style={{
+          background: 'var(--bg-card, rgba(255,255,255,0.02))',
+          border: '1px solid rgba(99,102,241,0.25)',
+          borderLeft: '3px solid #6366f1',
+          borderRadius: '10px', padding: '12px 14px',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+            <span style={{ fontSize: '14px' }}>📋</span>
+            <span style={{ fontFamily: 'Space Grotesk, sans-serif', color: '#6366f1', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px' }}>Kế hoạch hành động 48h</span>
+            <span style={{ marginLeft: 'auto', fontSize: '9px', color: 'var(--text-faint, #475569)', fontFamily: 'Space Grotesk, sans-serif' }}>Nhấn để đánh dấu</span>
+          </div>
+          {report.action_plan_48h.map((step, i) => (
+            <div key={i} onClick={() => toggleCheck(i)} style={{
+              display: 'flex', alignItems: 'flex-start', gap: '10px',
+              padding: '8px 0', cursor: 'pointer', transition: 'opacity 0.2s',
+              opacity: checkedItems[i] ? 0.45 : 1,
+              borderBottom: i < report.action_plan_48h.length - 1 ? '1px solid var(--section-border, rgba(255,255,255,0.04))' : undefined,
+            }}>
+              <div style={{
+                flexShrink: 0, width: '18px', height: '18px', borderRadius: '6px', marginTop: '1px',
+                border: `2px solid ${checkedItems[i] ? '#6366f1' : 'var(--border-card, rgba(255,255,255,0.08))'}`,
+                background: checkedItems[i] ? 'rgba(99,102,241,0.2)' : 'transparent',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s',
+              }}>
+                {checkedItems[i] && <span style={{ color: '#818cf8', fontSize: '10px', fontWeight: 800 }}>✓</span>}
+              </div>
+              <span style={{
+                color: checkedItems[i] ? 'var(--text-faint, #475569)' : 'var(--text-secondary, #94a3b8)',
+                fontSize: '12.5px', lineHeight: 1.55,
+                textDecoration: checkedItems[i] ? 'line-through' : 'none', transition: 'all 0.2s',
+              }}>{step}</span>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   )
