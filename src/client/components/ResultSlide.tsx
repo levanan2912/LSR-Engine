@@ -1117,12 +1117,17 @@ export default function ResultSlide({ report, analyzing, entries, onClose, theme
   const weekPoints = useMemo(() => buildPoints(entries, 'week', historyEntries), [entries, historyEntries])
 
   const riskPoints = useMemo<ChartPoint[]>(() => {
-    // Always use the current report's risk_level for the newest session
-    // (in case historyEntries hasn't loaded yet or doesn't include the freshly-submitted session)
-    return points.map((p, i) => ({
-      ...p,
-      riskLevel: (i === points.length - 1 && report?.risk_level) ? report.risk_level : (p.riskLevel || ''),
-    }))
+    // Each point already carries its risk_level from the server JOIN (entries → analysis_reports).
+    // The last point additionally gets patched with report.risk_level as a safety net:
+    //   - covers the race where entries was fetched just before the new report was saved
+    //   - covers the race where historyEntries hasn't loaded yet
+    // For all other points we trust p.riskLevel (populated from the JOIN or historyEntries).
+    return points.map((p, i) => {
+      const isLast = i === points.length - 1
+      // If this is the last point and report has a definitive risk_level, use it
+      const rl = isLast && report?.risk_level ? report.risk_level : (p.riskLevel || '')
+      return { ...p, riskLevel: rl }
+    })
   }, [points, report])
 
   const toggle = (i: number) => setExpandedIdx(prev => prev === i ? null : i)

@@ -497,18 +497,31 @@ entries.get('/', async (c) => {
     const rawLimit = c.req.query('limit') || c.req.query('days') || '20'
     const limit    = Math.min(parseInt(rawLimit), 90)
 
-    // Step 1: get the N most-recent sessions (DESC) so we always get the latest N
+    // Step 1: get the N most-recent sessions (DESC) LEFT JOINed with analysis_reports
+    //         so each entry carries its risk_level (empty string '' when no report)
     // Step 2: wrap in a subquery and re-sort ASC for the chart (oldest left → newest right)
     const result = await c.env.DB.prepare(`
-      SELECT * FROM (
-        SELECT * FROM daily_entries
-        WHERE user_id = ?
-        ORDER BY session_date DESC, session_number DESC
+      SELECT sub.*, r.risk_level
+      FROM (
+        SELECT e.id, e.user_id, e.session_date, e.session_number, e.session_time,
+               e.study_hours, e.focus_level, e.distraction_count, e.distracting_factors,
+               e.goal_achieved, e.emotional_state, e.dropout_feeling, e.created_at
+        FROM daily_entries e
+        WHERE e.user_id = ?
+        ORDER BY e.session_date DESC, e.session_number DESC
         LIMIT ?
-      ) ORDER BY session_date ASC, session_number ASC
+      ) sub
+      LEFT JOIN analysis_reports r ON r.entry_id = sub.id
+      ORDER BY sub.session_date ASC, sub.session_number ASC
     `).bind(userId, limit).all()
 
-    return c.json({ entries: result.results })
+    // Normalize: ensure risk_level is always a string ('' when null/missing)
+    const entries = result.results.map((row: any) => ({
+      ...row,
+      risk_level: row.risk_level ?? '',
+    }))
+
+    return c.json({ entries })
   } catch (err: unknown) {
     console.error('Get entries error:', err)
     return c.json({ error: 'Failed to fetch entries' }, 500)
@@ -668,7 +681,7 @@ entries.get('/history', async (c) => {
 
         report: row.report_id == null ? null : {
           id:                    row.report_id as number,
-          risk_level:            (row.risk_level || 'Stable') as string,
+          risk_level:            (row.risk_level ?? '') as string,
           key_signals:           parseArr(row.key_signals),
           short_term_forecast:   (row.short_term_forecast  || '') as string,
           primary_risk_driver:   (row.primary_risk_driver  || '') as string,
