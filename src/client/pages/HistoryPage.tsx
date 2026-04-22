@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { User, SessionWithReport, SessionReport, HistoryData } from '../types'
 import ChangePasswordModal from '../components/ChangePasswordModal'
+import ChatBot from '../components/ChatBot'
 
 interface Props {
   user: User
@@ -689,9 +690,12 @@ export default function HistoryPage({ user, authFetch, onLogout, onNavigate, cur
       </div>
 
       {/* Watermark */}
-      <div style={{ position: 'fixed', bottom: '14px', right: '14px', zIndex: 999, opacity: 0.45, pointerEvents: 'none' }}>
+      <div style={{ position: 'fixed', bottom: '14px', right: '84px', zIndex: 999, opacity: 0.45, pointerEvents: 'none' }}>
         <img src="/static/and-logo.png" alt="A.N.D" style={{ width: '56px', height: 'auto', display: 'block' }} />
       </div>
+
+      {/* ChatBot */}
+      <ChatBot authFetch={authFetch} theme={theme} />
 
       <style>{`
         * { scrollbar-width: thin; scrollbar-color: rgba(99,102,241,0.2) transparent; }

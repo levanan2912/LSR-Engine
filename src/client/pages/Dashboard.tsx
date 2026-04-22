@@ -6,6 +6,7 @@ import AnalysisReportComponent from '../components/AnalysisReport'
 import { ToastContainer, useToast } from '../components/Toast'
 import DuplicateModal, { TodaySession } from '../components/DuplicateModal'
 import ChangePasswordModal from '../components/ChangePasswordModal'
+import ChatBot from '../components/ChatBot'
 
 interface DashboardProps {
   user: User
@@ -546,9 +547,12 @@ export default function Dashboard({ user, authFetch, onLogout, onNavigate, curre
       </div>
 
       {/* A.N.D Watermark */}
-      <div style={{ position: 'fixed', bottom: '10px', right: '12px', zIndex: 999, opacity: 0.5, pointerEvents: 'none' }}>
+      <div style={{ position: 'fixed', bottom: '10px', right: '82px', zIndex: 999, opacity: 0.5, pointerEvents: 'none' }}>
         <img src="/static/and-logo.png" alt="A.N.D" style={{ width: '52px', height: 'auto', display: 'block' }} />
       </div>
+
+      {/* ChatBot */}
+      <ChatBot authFetch={authFetch} theme={theme} />
 
       <style>{`
         @keyframes spin       { to { transform: rotate(360deg); } }
