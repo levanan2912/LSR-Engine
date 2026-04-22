@@ -473,7 +473,8 @@ function PostCard({ post, userId, isDark, onClick, onDelete, onTagClick }: {
 }) {
   const label   = authorLabel(post.author_name, post.author_email)
   const isOwner = post.user_id === userId
-  const preview = post.content.length > 180 ? post.content.slice(0, 180) + '…' : post.content
+  const raw     = post.content ?? ''
+  const preview = raw.length > 180 ? raw.slice(0, 180) + '…' : raw
 
   return (
     <div

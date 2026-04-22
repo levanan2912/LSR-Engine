@@ -694,8 +694,18 @@ export default function HistoryPage({ user, authFetch, onLogout, onNavigate, cur
         <img src="/static/and-logo.png" alt="A.N.D" style={{ width: '56px', height: 'auto', display: 'block' }} />
       </div>
 
-      {/* ChatBot */}
-      <ChatBot authFetch={authFetch} theme={theme} />
+      {/* ChatBot — pass most recent report for context */}
+      <ChatBot
+        authFetch={authFetch}
+        theme={theme}
+        report={(() => {
+          if (!historyData) return null
+          const s = historyData.sessions.find(s => s.report)
+          if (!s?.report) return null
+          // Cast SessionReport → AnalysisReport shape (fields are compatible)
+          return { ...s.report, id: s.report.id, user_id: 0, entry_id: s.id, report_date: s.session_date } as any
+        })()}
+      />
 
       <style>{`
         * { scrollbar-width: thin; scrollbar-color: rgba(99,102,241,0.2) transparent; }

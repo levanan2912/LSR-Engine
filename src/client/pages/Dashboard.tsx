@@ -553,7 +553,7 @@ export default function Dashboard({ user, authFetch, onLogout, onNavigate, curre
       </div>
 
       {/* ChatBot */}
-      <ChatBot authFetch={authFetch} theme={theme} />
+      <ChatBot authFetch={authFetch} theme={theme} report={report} />
 
       <style>{`
         @keyframes spin       { to { transform: rotate(360deg); } }
