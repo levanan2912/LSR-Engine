@@ -105,6 +105,40 @@ export interface HistoryData {
   total_days: number
 }
 
+// ─── Forum types ──────────────────────────────────────────────────────────────
+
+export interface ForumPost {
+  id: number
+  user_id: number
+  title: string
+  content: string
+  created_at: string
+  updated_at: string
+  author_name: string
+  author_email: string
+  comment_count: number
+  like_count: number
+}
+
+export interface ForumComment {
+  id: number
+  post_id: number
+  user_id: number
+  parent_id: number | null
+  content: string
+  created_at: string
+  author_name: string
+  author_email: string
+}
+
+export interface ForumListResponse {
+  posts: ForumPost[]
+  total: number
+  page: number
+  limit: number
+  total_pages: number
+}
+
 export interface EntryFormData {
   study_hours: number
   focus_level: number

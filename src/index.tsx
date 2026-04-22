@@ -8,6 +8,7 @@ import reportsRoutes from './server/routes/reports'
 import geminiRoutes from './server/routes/gemini'
 import adminRoutes from './server/routes/admin'
 import chatRoutes from './server/routes/chat'
+import forumRoutes from './server/routes/forum'
 
 type Bindings = {
   DB: D1Database
@@ -30,6 +31,7 @@ app.route('/api/entries', entriesRoutes)
 app.route('/api/reports', reportsRoutes)
 app.route('/api/admin', adminRoutes)
 app.route('/api/chat', chatRoutes)
+app.route('/api/forum', forumRoutes)
 app.route('/api', geminiRoutes)
 
 // Serve static assets

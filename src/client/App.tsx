@@ -4,9 +4,10 @@ import { useTheme } from './hooks/useTheme'
 import AuthPage from './pages/AuthPage'
 import Dashboard from './pages/Dashboard'
 import HistoryPage from './pages/HistoryPage'
+import ForumPage from './pages/ForumPage'
 import ChangePasswordModal from './components/ChangePasswordModal'
 
-type Page = 'dashboard' | 'history'
+type Page = 'dashboard' | 'history' | 'forum'
 
 export default function App() {
   const { user, loading, login, register, logout, authFetch, updateUser } = useAuth()
@@ -38,7 +39,6 @@ export default function App() {
 
   // Force password change if admin reset the password
   if (user.must_change_password) {
-    // Retrieve the stored temp password so we can pre-fill (stored by useAuth after login)
     const tempPw = sessionStorage.getItem('lsr_temp_pw') || ''
     return (
       <div style={{
@@ -51,13 +51,10 @@ export default function App() {
         <ChangePasswordModal
           authFetch={authFetch}
           onClose={() => {
-            // Fallback: nếu không nhận được token mới thì reload
             sessionStorage.removeItem('lsr_temp_pw')
             window.location.reload()
           }}
           onSuccess={(newToken, newUser) => {
-            // Cập nhật state + localStorage ngay lập tức, không reload
-            // → must_change_password = false → App render Dashboard thay vì màn hình đổi MK
             updateUser(newUser, newToken)
           }}
           theme={theme}
@@ -73,5 +70,8 @@ export default function App() {
     onNavigate: setPage, currentPage: page,
     theme, onToggleTheme: toggleTheme,
   }
-  return page === 'history' ? <HistoryPage {...shared} /> : <Dashboard {...shared} />
+
+  if (page === 'forum')   return <ForumPage   {...shared} />
+  if (page === 'history') return <HistoryPage {...shared} />
+  return <Dashboard {...shared} />
 }

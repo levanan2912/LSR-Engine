@@ -12,7 +12,7 @@ interface DashboardProps {
   user: User
   authFetch: (url: string, options?: RequestInit) => Promise<Response>
   onLogout: () => void
-  onNavigate: (page: 'dashboard' | 'history') => void
+  onNavigate: (page: 'dashboard' | 'history' | 'forum') => void
   currentPage: string
   theme?: 'dark' | 'light'
   onToggleTheme?: () => void
@@ -148,6 +148,7 @@ function GlassPanel({ children, style }: { children: React.ReactNode; style?: Re
 const NAV = [
   { id: 'dashboard', label: '🏠 Bảng điều khiển' },
   { id: 'history',   label: '📈 Lịch sử'  },
+  { id: 'forum',     label: '💬 Diễn đàn'  },
 ]
 
 // ── Dashboard ──────────────────────────────────────────────────────────────────
@@ -389,7 +390,7 @@ export default function Dashboard({ user, authFetch, onLogout, onNavigate, curre
           </button>
           <div style={{ display: 'flex', gap: '2px' }}>
             {NAV.map(({ id, label }) => (
-              <button key={id} onClick={() => onNavigate(id as 'dashboard' | 'history')}
+              <button key={id} onClick={() => onNavigate(id as 'dashboard' | 'history' | 'forum')}
                 style={{
                   padding: '4px 11px', borderRadius: '8px', border: 'none',
                   background: currentPage === id ? 'rgba(99,102,241,0.15)' : 'transparent',

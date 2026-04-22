@@ -7,7 +7,7 @@ interface Props {
   user: User
   authFetch: (url: string, options?: RequestInit) => Promise<Response>
   onLogout: () => void
-  onNavigate: (page: 'dashboard' | 'history') => void
+  onNavigate: (page: 'dashboard' | 'history' | 'forum') => void
   currentPage: string
   theme?: 'dark' | 'light'
   onToggleTheme?: () => void
@@ -27,7 +27,7 @@ const riskStyle = (l: string) => RISK[l as RiskKey] ?? RISK['Fluctuating']
 const focusColor   = (v: number) => v >= 4 ? '#22c55e' : v >= 3 ? '#60a5fa' : '#f59e0b'
 const dropoutColor = (v: number) => v >= 4 ? '#ef4444' : v >= 3 ? '#f59e0b' : '#22c55e'
 
-const NAV = [{ id: 'dashboard', label: '🏠 Bảng điều khiển' }, { id: 'history', label: '📈 Lịch sử' }]
+const NAV = [{ id: 'dashboard', label: '🏠 Bảng điều khiển' }, { id: 'history', label: '📈 Lịch sử' }, { id: 'forum', label: '💬 Diễn đàn' }]
 
 // ─── Risk Badge ───────────────────────────────────────────────────────────────
 function RiskBadge({ level, small }: { level: string; small?: boolean }) {
@@ -565,7 +565,7 @@ export default function HistoryPage({ user, authFetch, onLogout, onNavigate, cur
           </button>
           <div style={{ display: 'flex', gap: '2px' }}>
             {NAV.map(({ id, label }) => (
-              <button key={id} onClick={() => onNavigate(id as 'dashboard' | 'history')}
+              <button key={id} onClick={() => onNavigate(id as 'dashboard' | 'history' | 'forum')}
                 style={{
                   padding: '4px 11px', borderRadius: '8px', border: 'none',
                   background: currentPage === id ? 'rgba(99,102,241,0.15)' : 'transparent',
