@@ -75,8 +75,11 @@ function detectAnnotations(pts: ChartPoint[]): ChartPoint[] {
 
 // ─── Build aggregated data points ──────────────────────────────────────────────
 function buildPoints(entries: DailyEntry[], mode: ViewMode, historyEntries?: DailyEntry[]): ChartPoint[] {
-  // Merge passed entries with history if available, deduplicate by id
-  const allEntries = historyEntries && historyEntries.length > entries.length ? historyEntries : entries
+  // Merge entries + historyEntries, dedup by id, preferring historyEntries (has risk_level)
+  const byId = new Map<number, DailyEntry>()
+  entries.forEach(e => byId.set(e.id, e))
+  if (historyEntries) historyEntries.forEach(e => byId.set(e.id, e)) // historyEntries overrides (has risk_level)
+  const allEntries = Array.from(byId.values())
   const asc = [...allEntries].sort((a, b) => {
     const d = a.session_date.localeCompare(b.session_date)
     return d !== 0 ? d : (a.session_number ?? 0) - (b.session_number ?? 0)
@@ -1113,13 +1116,14 @@ export default function ResultSlide({ report, analyzing, entries, onClose, theme
   const points = useMemo(() => buildPoints(entries, viewMode, historyEntries), [entries, viewMode, historyEntries])
   const weekPoints = useMemo(() => buildPoints(entries, 'week', historyEntries), [entries, historyEntries])
 
-  const riskPoints = useMemo<ChartPoint[]>(() =>
-    points.map((p, i) => ({
+  const riskPoints = useMemo<ChartPoint[]>(() => {
+    // Always use the current report's risk_level for the newest session
+    // (in case historyEntries hasn't loaded yet or doesn't include the freshly-submitted session)
+    return points.map((p, i) => ({
       ...p,
-      riskLevel: i === points.length - 1 && report ? report.risk_level : p.riskLevel,
-    })),
-    [points, report]
-  )
+      riskLevel: (i === points.length - 1 && report?.risk_level) ? report.risk_level : (p.riskLevel || ''),
+    }))
+  }, [points, report])
 
   const toggle = (i: number) => setExpandedIdx(prev => prev === i ? null : i)
 

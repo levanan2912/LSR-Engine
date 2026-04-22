@@ -274,9 +274,8 @@ export default function AnalysisReportComponent({ report, loading, isDark = true
       {/* ── 2. Key Signals ── */}
       {(report.key_signals ?? []).length > 0 && (
         <div style={{
-          background: cardBg,
-          border: `1px solid ${isDark ? 'rgba(251,191,36,0.25)' : 'rgba(245,158,11,0.35)'}`,
           background: isDark ? cardBg : 'rgba(251,191,36,0.06)',
+          border: `1px solid ${isDark ? 'rgba(251,191,36,0.25)' : 'rgba(245,158,11,0.35)'}`,
           borderLeft: `3px solid ${signalLabelColor}`,
           borderRadius: '10px', padding: '12px 14px',
         }}>
