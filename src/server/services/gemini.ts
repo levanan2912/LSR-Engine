@@ -9,7 +9,7 @@ export interface AnalysisResult {
   primary_risk_driver: string
   intervention_strategy: string
   action_plan_48h: string[]
-  monitoring_protocol: string
+  monitoring_protocol?: string   // deprecated — no longer generated, kept for old DB rows
   raw_ai_response?: string
   analyzed_by?: string
   key_name?: string       // friendly name of the API key used (e.g. "June")
@@ -34,79 +34,61 @@ export interface EntryInput {
 
 type HistoryRow = Record<string, unknown>
 
-// ─── ANALYTICAL_RULES — Bộ quy tắc v10 (Signal-Driven Pipeline) ─────────────────
+// ─── ANALYTICAL_RULES — Bộ quy tắc v11 (Signal-Driven, Compact Output) ────────
 
 export const ANALYTICAL_RULES = `
 ===== VAI TRÒ =====
-Bạn là hệ thống phân tích hành vi học tập. Nhiệm vụ: xây dựng chuỗi suy luận khép kín — mỗi phần output phải xuất phát trực tiếp từ dữ liệu tín hiệu đã xác định ở phần trước. Không được tạo ra nhận định mới ở phần sau nếu chưa có căn cứ từ phần trước.
+Bạn là hệ thống phân tích hành vi học tập. Xây dựng chuỗi suy luận khép kín — mỗi phần output phải xuất phát trực tiếp từ dữ liệu tín hiệu đã xác định ở phần trước.
 
-===== KIẾN TRÚC PIPELINE =====
-Thực hiện theo đúng 5 bước tuần tự. Kết quả mỗi bước là đầu vào bắt buộc của bước tiếp theo:
+===== PIPELINE 4 BƯỚC =====
 
-BƯỚC 1 — XÁC ĐỊNH TÍN HIỆU (key_signals)
-  Liệt kê 2–3 quan sát thực tế từ dữ liệu. Mỗi tín hiệu phải:
-  - Kết hợp ít nhất 2 chỉ số với nhau, hoặc 1 chỉ số với xu hướng lịch sử
-  - Có con số cụ thể (ví dụ: "Mức tập trung 2/5 giảm từ 4/5 ở phiên trước")
-  - Không dùng từ đánh giá (tốt, xấu, đáng lo, tích cực...), chỉ mô tả sự kiện
-  - Nếu có Yếu tố gây mất tập trung thì bắt buộc phải xuất hiện trong ít nhất 1 tín hiệu
+BƯỚC 1 — TÍN HIỆU (key_signals): 2–3 quan sát
+  - Kết hợp ít nhất 2 chỉ số, hoặc 1 chỉ số với xu hướng lịch sử
+  - Phải có con số cụ thể: "Tập trung 2/5, giảm từ 4/5 (1 phiên trước)"
+  - Chỉ mô tả sự kiện, không đánh giá (tốt/xấu/đáng lo...)
+  - Nếu có yếu tố gây mất tập trung: bắt buộc xuất hiện trong ≥1 tín hiệu
+  - MỖI tín hiệu tối đa 25 từ
 
-BƯỚC 2 — CHỌN PRIMARY RISK DRIVER (primary_risk_driver)
-  Từ các tín hiệu ở Bước 1, chọn DUY NHẤT 1 tín hiệu có ảnh hưởng nhân quả lớn nhất.
-  Câu phải bắt đầu bằng: "Tín hiệu [tên tín hiệu] cho thấy..."
-  Giải thích vì sao tín hiệu đó là nguyên nhân gốc, không phải triệu chứng.
+BƯỚC 2 — CHIẾN LƯỢC (intervention_strategy): 1 câu duy nhất
+  - Bắt đầu: "Để xử lý [tín hiệu chủ đạo từ Bước 1]..."
+  - Chỉ 1 hướng tiếp cận, nêu cơ chế tác động cụ thể
+  - Tối đa 35 từ, không dùng từ chung chung (cải thiện, nâng cao...)
 
-BƯỚC 3 — DỰ BÁO (short_term_forecast)
-  Phải trích dẫn đúng tên tín hiệu từ Bước 1 và driver từ Bước 2.
-  Cấu trúc bắt buộc: "Nếu [tên driver cụ thể] không thay đổi, [tín hiệu X] có khả năng [hệ quả cụ thể]."
-  Thêm 1 câu điều kiện ngược: "Nếu [hành động cụ thể] được thực hiện, [chỉ số cụ thể] có khả năng cải thiện về [mức cụ thể]."
-  Không được đề cập tới bất kỳ hành động nào chưa có trong Bước 1 hoặc 2.
+BƯỚC 3 — DỰ BÁO (short_term_forecast): 1–2 câu
+  - Câu 1: "Nếu [driver] không thay đổi, [tín hiệu X] có khả năng [hệ quả]."
+  - Câu 2 (tuỳ chọn): "Nếu [hành động từ Bước 2] được thực hiện, [chỉ số] có khả năng đạt [mức]."
+  - Tối đa 50 từ tổng cộng
 
-BƯỚC 4 — CHIẾN LƯỢC CAN THIỆP (intervention_strategy)
-  Phải bắt đầu bằng: "Để xử lý [driver từ Bước 2]..."
-  Mô tả 1 hướng tiếp cận duy nhất, cụ thể về cơ chế tác động vào driver đó.
-  Không được đề xuất nhiều hướng song song. Không dùng từ chung chung (cải thiện, nâng cao, tăng cường...).
+BƯỚC 4 — HÀNH ĐỘNG (action_plan_48h): đúng 3 mục
+  - Mục 1: Can thiệp trực tiếp vào driver (ai, làm gì, khi nào, bao lâu)
+  - Mục 2: Kiểm soát môi trường liên quan tín hiệu cụ thể ở Bước 1
+  - Mục 3: Đo lại — chỉ số nào cần đạt bao nhiêu ở phiên tiếp theo
+  - Mỗi mục tối đa 20 từ, không trùng nội dung nhau
 
-BƯỚC 5 — KẾ HOẠCH HÀNH ĐỘNG (action_plan_48h)
-  Đúng 3 hành động, được suy ra từ chiến lược ở Bước 4. Mỗi hành động:
-  - Hành động 1: Can thiệp trực tiếp vào driver (ai làm gì, khi nào, bao lâu)
-  - Hành động 2: Kiểm soát môi trường hoặc điều kiện liên quan đến tín hiệu cụ thể trong Bước 1
-  - Hành động 3: Đo lại — chỉ số nào cần đạt bao nhiêu ở phiên tiếp theo để xác nhận can thiệp có hiệu quả
-  Mỗi hành động phải có kết quả quan sát được ngay trong phiên tiếp theo.
-  Không được lặp lại nội dung giữa 3 hành động.
-
-===== QUY TẮC RÀNG BUỘC =====
-- Mọi từ trong short_term_forecast, intervention_strategy, action_plan_48h phải có thể truy nguồn về ít nhất 1 tín hiệu trong key_signals
-- Nếu không thể truy nguồn → xóa câu đó, không được giữ lại
-- Không được thêm lời khuyên chung chung không xuất phát từ dữ liệu
-- Không gán nhãn tâm lý (lo lắng, mất động lực, tinh thần...), chỉ mô tả hành vi đo lường được
+===== QUY TẮC CỨNG =====
+- Không thêm lời khuyên chung không xuất phát từ dữ liệu
+- Không gán nhãn tâm lý (lo lắng, mất động lực...), chỉ mô tả hành vi đo được
 - Không dùng từ tuyệt đối (chắc chắn, sẽ xảy ra, không thể...)
-- NGHIÊM CẤM dùng "phiên -1", "phiên -2", "phiên -N" hay số âm để chỉ phiên lịch sử. PHẢI dùng "1 phiên trước", "2 phiên trước", "3 phiên trước", v.v.
+- NGHIÊM CẤM "phiên -1", "phiên -N" — PHẢI dùng "1 phiên trước", "2 phiên trước"
 
 ===== PHÂN LOẠI RỦI RO =====
-- Stable: Mức tập trung ổn định, Mức muốn bỏ cuộc thấp, Đạt mục tiêu
-- Fluctuating: ít nhất 1 chỉ số dao động hơn 1 bậc giữa các phiên
-- High Risk: Mức tập trung dưới 3 VÀ (Mức bỏ cuộc từ 4 HOẶC Không đạt mục tiêu)
-- risk_level phải nhất quán với primary_risk_driver
+- Stable    : Tập trung ổn định, muốn bỏ cuộc thấp, đạt mục tiêu
+- Fluctuating: ≥1 chỉ số dao động >1 bậc giữa các phiên
+- High Risk : Tập trung <3 VÀ (bỏ cuộc ≥4 HOẶC không đạt mục tiêu)
 
-===== GIAO THỨC GIÁM SÁT (monitoring_protocol) =====
-Phải có 2 điều kiện kích hoạt dạng: "Nếu [chỉ số] đạt [ngưỡng cụ thể] trong phiên tiếp theo thì [hành động cụ thể]."
-Các ngưỡng phải suy ra từ dữ liệu hiện tại, không được dùng ngưỡng cố định như 3/5, 4/5 chung chung.
-
-===== ĐỊNH DẠNG OUTPUT =====
-Trả về DUY NHẤT một JSON object hợp lệ với đúng 7 fields:
-  risk_level         : "Stable" | "Fluctuating" | "High Risk"
-  key_signals        : array of 2–3 strings (Bước 1)
-  primary_risk_driver: string (Bước 2)
-  short_term_forecast: string (Bước 3)
-  intervention_strategy: string (Bước 4)
-  action_plan_48h    : array of exactly 3 strings (Bước 5)
-  monitoring_protocol: string
+===== OUTPUT =====
+Trả về DUY NHẤT một JSON hợp lệ, đúng 6 fields:
+  risk_level          : "Stable" | "Fluctuating" | "High Risk"
+  key_signals         : array of 2–3 strings (Bước 1)
+  intervention_strategy: string (Bước 2)
+  short_term_forecast : string (Bước 3)
+  action_plan_48h     : array of exactly 3 strings (Bước 4)
+  primary_risk_driver : string — tín hiệu chủ đạo được dùng ở Bước 2 (1 câu)
 Không markdown. Không text ngoài JSON.
 
-===== NGÔN NGỮ BẮT BUỘC =====
-TOÀN BỘ nội dung text trong JSON (key_signals, primary_risk_driver, short_term_forecast, intervention_strategy, action_plan_48h, monitoring_protocol) PHẢI viết hoàn toàn bằng tiếng Việt.
-NGHIÊM CẤM dùng tiếng Anh trong bất kỳ trường nào ngoài risk_level (giữ nguyên "Stable"/"Fluctuating"/"High Risk" vì đây là key hệ thống).
-Phong cách: phân tích, ngắn gọn, chính xác theo dữ liệu.
+===== NGÔN NGỮ =====
+Toàn bộ text PHẢI bằng tiếng Việt, trừ risk_level (giữ nguyên EN vì là key hệ thống).
+Phong cách: súc tích, phân tích, bám dữ liệu — không văn hoa, không rào đón.
 `
 
 // ─── formatAnalysisData — session-based prompt (v7) ──────────────────────────
@@ -243,10 +225,6 @@ function validateAnalysisOutput(analysis: Partial<AnalysisResult>): ValidationRe
     }
   }
 
-  // monitoring_protocol không được dùng ký hiệu toán học
-  if (analysis.monitoring_protocol && /[<>=≤≥]/.test(analysis.monitoring_protocol)) {
-    violations.push('Monitoring protocol sử dụng ký hiệu toán học thay vì viết bằng chữ')
-  }
 
   return { isValid: violations.length === 0, violations }
 }
@@ -272,14 +250,12 @@ function sanitizeAnalysisResult(result: Partial<AnalysisResult>): Partial<Analys
     result.intervention_strategy = sanitizeSessionRefs(result.intervention_strategy)
   if (result.action_plan_48h)
     result.action_plan_48h = result.action_plan_48h.map(sanitizeSessionRefs)
-  if (result.monitoring_protocol)
-    result.monitoring_protocol = sanitizeSessionRefs(result.monitoring_protocol)
   return result
 }
 
 // normalizeGeminiFields — map các alias field name mà Gemini hay dùng về đúng schema
 // Gemini đôi khi trả về: key_signals_detected, recommended_intervention_strategy,
-// monitoring_protocol (array thay vì string), v.v.
+// v.v.
 function normalizeGeminiFields(raw: Record<string, unknown>): Partial<AnalysisResult> {
   const out: Partial<AnalysisResult> = {}
 
@@ -309,10 +285,6 @@ function normalizeGeminiFields(raw: Record<string, unknown>): Partial<AnalysisRe
   const ap = raw['action_plan_48h'] ?? raw['action_plan'] ?? raw['actions'] ?? raw['48h_action_plan']
   if (Array.isArray(ap) && ap.length > 0) out.action_plan_48h = ap as string[]
 
-  // monitoring_protocol — alias: monitoring, protocol; đôi khi là array → join
-  const mp = raw['monitoring_protocol'] ?? raw['monitoring'] ?? raw['protocol']
-  if (typeof mp === 'string' && mp)       out.monitoring_protocol = mp
-  else if (Array.isArray(mp) && mp.length > 0) out.monitoring_protocol = (mp as string[]).join(' ')
 
   return out
 }
@@ -376,9 +348,6 @@ export function parseGeminiResponse(responseText: string): Partial<AnalysisResul
   if (planMatch) {
     try { partial.action_plan_48h = JSON.parse(`[${planMatch[1]}]`) as string[] } catch { /* bỏ qua */ }
   }
-
-  const protocolMatch = responseText.match(/"monitoring_protocol"\s*:\s*"([\s\S]*?)"(?:\s*,|\s*\})/)
-  if (protocolMatch) partial.monitoring_protocol = protocolMatch[1]
 
   return sanitizeAnalysisResult(partial)
 }
@@ -565,13 +534,7 @@ async function callGeminiModelSafely(
     }
 
     // ── NORMALIZATION: Dùng normalizeGeminiFields để chuẩn hoá aliases ────
-    // Chạy TRƯỚC validation để handle các alias field và monitoring_protocol array→string
     const parsed = { ...rawParsed, ...normalizeGeminiFields(rawParsed) } as Record<string, unknown>
-
-    // ── AUTO-FIX: monitoring_protocol array → string ───────────────────────
-    if (Array.isArray(parsed.monitoring_protocol)) {
-      parsed.monitoring_protocol = (parsed.monitoring_protocol as string[]).join(' ')
-    }
 
     // ── AUTO-FIX: risk_level fuzzy match ──────────────────────────────────
     // Model đôi khi trả tiếng Việt hoặc biến thể khác → map về 3 giá trị chuẩn
@@ -591,8 +554,7 @@ async function callGeminiModelSafely(
       }
     }
 
-    // ── VALIDATION 7: Đủ fields cốt lõi (chỉ reject nếu thiếu hoàn toàn) ─
-    // Bỏ monitoring_protocol khỏi required vì có thể auto-generate
+    // ── VALIDATION 7: Đủ fields cốt lõi ─────────────────────────────────────
     const requiredFields = [
       'risk_level', 'key_signals', 'short_term_forecast',
       'primary_risk_driver', 'intervention_strategy',
@@ -610,12 +572,6 @@ async function callGeminiModelSafely(
         `   Raw response (150 ký tự đầu): ${responseText.substring(0, 150)}`,
       )
       throw new Error(`MISSING_FIELDS: ${missingFields.join(', ')}`)
-    }
-
-    // ── AUTO-FIX: monitoring_protocol fallback nếu vẫn thiếu ─────────────
-    if (!parsed.monitoring_protocol || (parsed.monitoring_protocol as string).length < 5) {
-      parsed.monitoring_protocol = 'Theo dõi mức tập trung và mức muốn bỏ cuộc trong phiên tiếp theo.'
-      console.warn(`⚠️  [${modelName}] monitoring_protocol thiếu — dùng fallback mặc định`)
     }
 
     // ── VALIDATION 8: risk_level hợp lệ (sau auto-fix) ───────────────────
@@ -714,7 +670,7 @@ Bước 4 → intervention_strategy: bắt đầu bằng "Để xử lý [driver
 Bước 5 → action_plan_48h: đúng 3 hành động (can thiệp / kiểm soát / đo lại), suy ra từ Bước 4.
 
 Trả về DUY NHẤT một JSON object hợp lệ, không markdown, không text ngoài JSON.
-JSON có đúng 7 fields: risk_level, key_signals (array), short_term_forecast, primary_risk_driver, intervention_strategy, action_plan_48h (array gồm đúng 3 phần tử), monitoring_protocol.`
+JSON có đúng 6 fields: risk_level, key_signals (array), short_term_forecast, primary_risk_driver, intervention_strategy, action_plan_48h (array gồm đúng 3 phần tử).`
 
   // ── Load model definitions từ DB (nếu có), fallback về hardcoded ─────────
   let modelDefs: Array<{ name: string; timeout: number; priority: string }>
