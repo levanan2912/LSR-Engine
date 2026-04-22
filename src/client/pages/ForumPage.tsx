@@ -15,6 +15,11 @@ interface Props {
 
 type SortMode = 'newest' | 'top'
 
+// ── Tree node ──
+interface CommentNode extends ForumComment {
+  children: CommentNode[]
+}
+
 const NAV = [
   { id: 'dashboard', label: '🏠 Bảng điều khiển' },
   { id: 'history',   label: '📈 Lịch sử' },
@@ -39,6 +44,21 @@ function authorLabel(name: string, email: string): string {
   return name && name.trim() ? name : email.split('@')[0]
 }
 
+/** Build tree from flat comment list */
+function buildTree(flat: ForumComment[]): CommentNode[] {
+  const map = new Map<number, CommentNode>()
+  const roots: CommentNode[] = []
+  for (const c of flat) map.set(c.id, { ...c, children: [] })
+  for (const node of map.values()) {
+    if (node.parent_id != null && map.has(node.parent_id)) {
+      map.get(node.parent_id)!.children.push(node)
+    } else {
+      roots.push(node)
+    }
+  }
+  return roots
+}
+
 // ─── Avatar ──────────────────────────────────────────────────────────────────
 
 function Avatar({ name, size = 32 }: { name: string; size?: number }) {
@@ -48,7 +68,7 @@ function Avatar({ name, size = 32 }: { name: string; size?: number }) {
     <div style={{
       width: size, height: size, borderRadius: '50%', background: colors[idx],
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      color: '#fff', fontWeight: 700, fontSize: size * 0.38,
+      color: '#fff', fontWeight: 700, fontSize: Math.max(10, size * 0.38),
       flexShrink: 0, fontFamily: 'Space Grotesk, sans-serif', userSelect: 'none',
     }}>
       {name.charAt(0).toUpperCase()}
@@ -57,7 +77,6 @@ function Avatar({ name, size = 32 }: { name: string; size?: number }) {
 }
 
 // ─── ReplyBox ─────────────────────────────────────────────────────────────────
-// Inline textarea that appears under a comment for replying
 
 function ReplyBox({
   isDark, parentAuthor, onSubmit, onCancel,
@@ -68,16 +87,15 @@ function ReplyBox({
   onCancel: () => void
 }) {
   const [text, setText] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [busy, setBusy] = useState(false)
   const ref = useRef<HTMLTextAreaElement>(null)
-
   useEffect(() => { ref.current?.focus() }, [])
 
   const submit = async () => {
-    if (!text.trim() || loading) return
-    setLoading(true)
+    if (!text.trim() || busy) return
+    setBusy(true)
     await onSubmit(text.trim())
-    setLoading(false)
+    setBusy(false)
   }
 
   return (
@@ -87,16 +105,15 @@ function ReplyBox({
         value={text}
         onChange={e => setText(e.target.value)}
         onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit() } }}
-        placeholder={`Trả lời ${parentAuthor}… (Enter để gửi)`}
+        placeholder={`Trả lời ${parentAuthor}… (Enter để gửi, Shift+Enter xuống dòng)`}
         rows={2}
         style={{
           width: '100%', resize: 'none',
-          background: isDark ? 'rgba(0,0,0,0.25)' : '#f8fafc',
-          border: `1px solid ${isDark ? 'rgba(99,102,241,0.35)' : '#818cf8'}`,
+          background: isDark ? 'rgba(0,0,0,0.25)' : '#f0f4ff',
+          border: `1px solid ${isDark ? 'rgba(99,102,241,0.4)' : '#818cf8'}`,
           borderRadius: '8px', padding: '8px 10px',
           color: isDark ? '#e2e8f0' : '#0f172a',
-          fontSize: '13px', fontFamily: 'Inter, sans-serif', lineHeight: 1.5,
-          outline: 'none',
+          fontSize: '13px', fontFamily: 'Inter, sans-serif', lineHeight: 1.5, outline: 'none',
         }}
       />
       <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
@@ -106,119 +123,125 @@ function ReplyBox({
           borderRadius: '6px', padding: '4px 12px',
           color: isDark ? '#94a3b8' : '#64748b', fontSize: '12px', cursor: 'pointer',
         }}>Hủy</button>
-        <button onClick={submit} disabled={loading || !text.trim()} style={{
+        <button onClick={submit} disabled={busy || !text.trim()} style={{
           background: 'linear-gradient(135deg,#6366f1,#8b5cf6)',
           border: 'none', borderRadius: '6px', padding: '4px 14px',
           color: '#fff', fontSize: '12px', fontWeight: 600, cursor: 'pointer',
-          opacity: (loading || !text.trim()) ? 0.5 : 1,
+          opacity: (busy || !text.trim()) ? 0.5 : 1,
         }}>
-          {loading ? '…' : '↩ Gửi'}
+          {busy ? '…' : '↩ Gửi'}
         </button>
       </div>
     </div>
   )
 }
 
-// ─── CommentThread ─────────────────────────────────────────────────────────────
-// Renders one top-level comment + its collapsible replies
+// ─── CommentNode (recursive) ──────────────────────────────────────────────────
 
-function CommentThread({
-  comment, replies, userId, isDark,
+function CommentItem({
+  node, userId, isDark, depth,
   onReply, onDelete,
 }: {
-  comment: ForumComment
-  replies: ForumComment[]
+  node: CommentNode
   userId: number
   isDark: boolean
+  depth: number            // 0 = top-level, 1, 2, … unlimited
   onReply: (parentId: number, parentAuthor: string, text: string) => Promise<void>
   onDelete: (id: number) => void
 }) {
-  const [repliesOpen, setRepliesOpen] = useState(false)
+  const [childrenOpen, setChildrenOpen] = useState(depth < 2) // auto-open first 2 levels
   const [showReplyBox, setShowReplyBox] = useState(false)
 
-  const label   = authorLabel(comment.author_name, comment.author_email)
-  const isMine  = comment.user_id === userId
-  const hasReplies = replies.length > 0
+  const label   = authorLabel(node.author_name, node.author_email)
+  const isMine  = node.user_id === userId
+  const hasChildren = node.children.length > 0
 
-  const cardBg     = isDark ? 'rgba(255,255,255,0.04)' : '#ffffff'
-  const cardBorder = isDark ? 'rgba(255,255,255,0.08)' : '#e2e8f0'
-  const replyBg    = isDark ? 'rgba(255,255,255,0.025)' : '#f8fafc'
-  const replyBorder= isDark ? 'rgba(255,255,255,0.06)' : '#e8edf4'
+  // Indent capped at 40px per level for readability
+  const indentPx = Math.min(depth * 20, 120)
+
+  // Slightly smaller avatar per level (min 20px)
+  const avatarSz = Math.max(20, 28 - depth * 2)
+
+  const borderColors = ['#818cf8','#a78bfa','#c4b5fd','#ddd6fe','#ede9fe']
+  const lineColor = borderColors[Math.min(depth, borderColors.length - 1)]
+
+  const bg     = depth === 0
+    ? (isDark ? 'rgba(255,255,255,0.04)' : '#ffffff')
+    : (isDark ? 'rgba(255,255,255,0.025)' : '#f8fafc')
+  const border = depth === 0
+    ? (isDark ? 'rgba(255,255,255,0.08)' : '#e2e8f0')
+    : (isDark ? 'rgba(255,255,255,0.06)' : '#e8edf4')
 
   return (
-    <div>
-      {/* ── Top-level comment ── */}
+    <div style={{ marginLeft: `${indentPx}px` }}>
+      {/* The comment card */}
       <div style={{
-        background: cardBg,
-        border: `1px solid ${cardBorder}`,
+        background: bg,
+        border: `1px solid ${border}`,
         borderRadius: '10px',
-        padding: '12px 14px',
-        display: 'flex', gap: '10px', alignItems: 'flex-start',
+        padding: '10px 13px',
+        display: 'flex', gap: '9px', alignItems: 'flex-start',
       }}>
-        <Avatar name={label} size={28} />
+        <Avatar name={label} size={avatarSz} />
         <div style={{ flex: 1, minWidth: 0 }}>
-          {/* Author row */}
+          {/* Author + time + delete */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-            <div style={{ fontSize: '12px', fontWeight: 600, color: isDark ? '#94a3b8' : '#475569' }}>
+            <span style={{ fontSize: '12px', fontWeight: 600, color: isDark ? '#94a3b8' : '#475569' }}>
               {label}
-              <span style={{ fontWeight: 400, marginLeft: '6px', color: isDark ? '#64748b' : '#94a3b8' }}>
-                · {timeAgo(comment.created_at)}
+              <span style={{ fontWeight: 400, marginLeft: '5px', color: isDark ? '#64748b' : '#94a3b8', fontSize: '11px' }}>
+                · {timeAgo(node.created_at)}
               </span>
-            </div>
+            </span>
             {isMine && (
               <button
-                onClick={() => onDelete(comment.id)}
+                onClick={() => onDelete(node.id)}
                 style={{
                   background: 'transparent', border: 'none', cursor: 'pointer',
-                  color: isDark ? '#64748b' : '#94a3b8', fontSize: '12px',
-                  padding: '2px 4px', borderRadius: '4px', lineHeight: 1,
+                  color: isDark ? '#64748b' : '#94a3b8', fontSize: '11px',
+                  padding: '1px 3px', borderRadius: '4px', lineHeight: 1,
+                  transition: 'color 0.15s',
                 }}
                 onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = '#ef4444' }}
                 onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = isDark ? '#64748b' : '#94a3b8' }}
-                title="Xóa bình luận"
+                title="Xóa"
               >🗑</button>
             )}
           </div>
 
           {/* Content */}
-          <div style={{ fontSize: '13px', color: isDark ? '#cbd5e1' : '#334155', lineHeight: 1.6, whiteSpace: 'pre-line' }}>
-            {comment.content}
+          <div style={{ fontSize: '13px', color: isDark ? '#cbd5e1' : '#334155', lineHeight: 1.65, whiteSpace: 'pre-line' }}>
+            {node.content}
           </div>
 
-          {/* Action row */}
-          <div style={{ display: 'flex', gap: '12px', marginTop: '8px', alignItems: 'center' }}>
-            {/* Reply button */}
+          {/* Actions */}
+          <div style={{ display: 'flex', gap: '12px', marginTop: '7px', alignItems: 'center' }}>
             <button
-              onClick={() => { setShowReplyBox(v => !v); setRepliesOpen(true) }}
+              onClick={() => { setShowReplyBox(v => !v); if (!showReplyBox && !childrenOpen) setChildrenOpen(true) }}
               style={{
                 background: 'transparent', border: 'none', cursor: 'pointer', padding: 0,
                 fontSize: '12px', fontWeight: 600,
                 color: showReplyBox ? '#818cf8' : (isDark ? '#64748b' : '#94a3b8'),
-                display: 'flex', alignItems: 'center', gap: '4px',
+                display: 'flex', alignItems: 'center', gap: '3px',
               }}
-            >
-              ↩ Trả lời
-            </button>
+            >↩ Trả lời</button>
 
-            {/* Toggle replies */}
-            {hasReplies && (
+            {hasChildren && (
               <button
-                onClick={() => setRepliesOpen(v => !v)}
+                onClick={() => setChildrenOpen(v => !v)}
                 style={{
                   background: 'transparent', border: 'none', cursor: 'pointer', padding: 0,
                   fontSize: '12px', fontWeight: 600,
-                  color: repliesOpen ? '#818cf8' : (isDark ? '#64748b' : '#94a3b8'),
+                  color: childrenOpen ? '#818cf8' : (isDark ? '#64748b' : '#94a3b8'),
                   display: 'flex', alignItems: 'center', gap: '4px',
                   transition: 'color 0.15s',
                 }}
               >
                 <span style={{
-                  display: 'inline-block',
-                  transform: repliesOpen ? 'rotate(90deg)' : 'rotate(0deg)',
+                  display: 'inline-block', fontSize: '9px',
+                  transform: childrenOpen ? 'rotate(90deg)' : 'rotate(0deg)',
                   transition: 'transform 0.2s',
-                  fontSize: '10px',
                 }}>▶</span>
-                {replies.length} phản hồi
+                {node.children.length} phản hồi
               </button>
             )}
           </div>
@@ -229,8 +252,9 @@ function CommentThread({
               isDark={isDark}
               parentAuthor={label}
               onSubmit={async (text) => {
-                await onReply(comment.id, label, text)
+                await onReply(node.id, label, text)
                 setShowReplyBox(false)
+                setChildrenOpen(true)
               }}
               onCancel={() => setShowReplyBox(false)}
             />
@@ -238,74 +262,40 @@ function CommentThread({
         </div>
       </div>
 
-      {/* ── Replies (collapsible) ── */}
-      {hasReplies && repliesOpen && (
+      {/* Children (recursive) — indented + left accent line */}
+      {hasChildren && childrenOpen && (
         <div style={{
-          marginLeft: '28px',
           marginTop: '6px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '6px',
-          borderLeft: `2px solid ${isDark ? 'rgba(99,102,241,0.25)' : '#c7d2fe'}`,
-          paddingLeft: '12px',
+          borderLeft: `2px solid ${lineColor}`,
+          paddingLeft: '10px',
+          display: 'flex', flexDirection: 'column', gap: '6px',
+          opacity: childrenOpen ? 1 : 0,
+          transition: 'opacity 0.15s',
         }}>
-          {replies.map(reply => {
-            const rLabel = authorLabel(reply.author_name, reply.author_email)
-            const rMine  = reply.user_id === userId
-            return (
-              <div key={reply.id} style={{
-                background: replyBg,
-                border: `1px solid ${replyBorder}`,
-                borderRadius: '8px',
-                padding: '10px 12px',
-                display: 'flex', gap: '8px', alignItems: 'flex-start',
-              }}>
-                <Avatar name={rLabel} size={22} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3px' }}>
-                    <div style={{ fontSize: '11px', fontWeight: 600, color: isDark ? '#94a3b8' : '#475569' }}>
-                      {rLabel}
-                      <span style={{ fontWeight: 400, marginLeft: '5px', color: isDark ? '#64748b' : '#94a3b8' }}>
-                        · {timeAgo(reply.created_at)}
-                      </span>
-                    </div>
-                    {rMine && (
-                      <button
-                        onClick={() => onDelete(reply.id)}
-                        style={{
-                          background: 'transparent', border: 'none', cursor: 'pointer',
-                          color: isDark ? '#64748b' : '#94a3b8', fontSize: '11px',
-                          padding: '1px 3px', borderRadius: '4px', lineHeight: 1,
-                        }}
-                        onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = '#ef4444' }}
-                        onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = isDark ? '#64748b' : '#94a3b8' }}
-                        title="Xóa"
-                      >🗑</button>
-                    )}
-                  </div>
-                  <div style={{ fontSize: '13px', color: isDark ? '#cbd5e1' : '#334155', lineHeight: 1.6, whiteSpace: 'pre-line' }}>
-                    {reply.content}
-                  </div>
-                </div>
-              </div>
-            )
-          })}
+          {node.children.map(child => (
+            <CommentItem
+              key={child.id}
+              node={child}
+              userId={userId}
+              isDark={isDark}
+              depth={depth + 1}
+              onReply={onReply}
+              onDelete={onDelete}
+            />
+          ))}
         </div>
       )}
     </div>
   )
 }
 
-// ─── PostCard (list view) ─────────────────────────────────────────────────────
+// ─── PostCard ─────────────────────────────────────────────────────────────────
 
 function PostCard({
   post, userId, isDark, onClick, onDelete,
 }: {
-  post: ForumPost
-  userId: number
-  isDark: boolean
-  onClick: () => void
-  onDelete: (id: number) => void
+  post: ForumPost; userId: number; isDark: boolean
+  onClick: () => void; onDelete: (id: number) => void
 }) {
   const label   = authorLabel(post.author_name, post.author_email)
   const isOwner = post.user_id === userId
@@ -357,11 +347,9 @@ function PostCard({
           >🗑</button>
         )}
       </div>
-
       <div style={{ fontSize: '13px', color: isDark ? '#94a3b8' : '#475569', lineHeight: 1.6, whiteSpace: 'pre-line' }}>
         {preview}
       </div>
-
       <div style={{ display: 'flex', gap: '14px', fontSize: '12px', color: isDark ? '#64748b' : '#94a3b8' }}>
         <span>❤️ {post.like_count}</span>
         <span>💬 {post.comment_count} bình luận</span>
@@ -375,9 +363,7 @@ function PostCard({
 function PostDetail({
   postId, userId, isDark, authFetch, onBack,
 }: {
-  postId: number
-  userId: number
-  isDark: boolean
+  postId: number; userId: number; isDark: boolean
   authFetch: (url: string, options?: RequestInit) => Promise<Response>
   onBack: () => void
 }) {
@@ -401,7 +387,7 @@ function PostDetail({
         setComments(data.comments)
         setLiked(data.liked)
         setLikeCount(data.post.like_count)
-      } else { setError('Không thể tải bài viết.') }
+      } else setError('Không thể tải bài viết.')
     } catch { setError('Lỗi kết nối.') }
     finally  { setLoading(false) }
   }, [postId, authFetch])
@@ -416,7 +402,7 @@ function PostDetail({
     } catch {}
   }
 
-  // Top-level comment submit
+  // Submit a new top-level comment
   const handleComment = async () => {
     if (!commentText.trim()) return
     setSubmitting(true)
@@ -433,7 +419,7 @@ function PostDetail({
     setSubmitting(false)
   }
 
-  // Reply to a comment
+  // Submit a reply (any depth)
   const handleReply = async (parentId: number, _parentAuthor: string, text: string) => {
     try {
       const res  = await authFetch(`/api/forum/posts/${postId}/comments`, {
@@ -451,19 +437,23 @@ function PostDetail({
     if (!confirm('Xóa bình luận này?')) return
     try {
       const res = await authFetch(`/api/forum/comments/${id}`, { method: 'DELETE' })
-      if (res.ok) setComments(prev => prev.filter(c => c.id !== id))
+      if (res.ok) {
+        // BFS: collect deleted node + all its descendants from flat list
+        const toRemove = new Set<number>([id])
+        let prev = -1
+        while (prev !== toRemove.size) {
+          prev = toRemove.size
+          comments.forEach(c => {
+            if (c.parent_id != null && toRemove.has(c.parent_id)) toRemove.add(c.id)
+          })
+        }
+        setComments(prev => prev.filter(c => !toRemove.has(c.id)))
+      }
     } catch {}
   }
 
-  // Split flat list → top-level + reply map
-  const topLevel = comments.filter(c => !c.parent_id)
-  const replyMap = comments.reduce<Record<number, ForumComment[]>>((acc, c) => {
-    if (c.parent_id) {
-      acc[c.parent_id] = acc[c.parent_id] || []
-      acc[c.parent_id].push(c)
-    }
-    return acc
-  }, {})
+  const tree = buildTree(comments)
+  const totalComments = comments.length
 
   const card: React.CSSProperties = {
     background: isDark ? 'rgba(255,255,255,0.04)' : '#ffffff',
@@ -471,16 +461,10 @@ function PostDetail({
     borderRadius: '12px',
   }
 
-  if (loading) return (
-    <div style={{ display: 'flex', justifyContent: 'center', padding: '60px', color: isDark ? '#64748b' : '#94a3b8' }}>
-      Đang tải…
-    </div>
-  )
-  if (error || !post) return (
-    <div style={{ textAlign: 'center', padding: '60px', color: '#ef4444' }}>{error || 'Không tìm thấy bài viết.'}</div>
-  )
+  if (loading) return <div style={{ textAlign: 'center', padding: '60px', color: isDark ? '#64748b' : '#94a3b8' }}>Đang tải…</div>
+  if (error || !post) return <div style={{ textAlign: 'center', padding: '60px', color: '#ef4444' }}>{error || 'Không tìm thấy bài viết.'}</div>
 
-  const label   = authorLabel(post.author_name, post.author_email)
+  const label = authorLabel(post.author_name, post.author_email)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -490,9 +474,7 @@ function PostDetail({
         color: isDark ? '#818cf8' : '#6366f1', fontSize: '13px', fontWeight: 600,
         cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', padding: 0,
         fontFamily: 'Space Grotesk, sans-serif',
-      }}>
-        ← Quay lại diễn đàn
-      </button>
+      }}>← Quay lại diễn đàn</button>
 
       {/* Post body */}
       <div style={{ ...card, padding: '22px 24px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
@@ -505,81 +487,58 @@ function PostDetail({
             <div style={{ fontSize: '12px', color: isDark ? '#64748b' : '#94a3b8' }}>
               <span style={{ fontWeight: 500, color: isDark ? '#94a3b8' : '#475569' }}>{label}</span>
               {' · '}{timeAgo(post.created_at)}
-              {post.updated_at !== post.created_at && (
-                <span style={{ marginLeft: '6px', fontStyle: 'italic' }}>(đã chỉnh sửa)</span>
-              )}
+              {post.updated_at !== post.created_at && <span style={{ marginLeft: '6px', fontStyle: 'italic' }}>(đã chỉnh sửa)</span>}
             </div>
           </div>
         </div>
-
-        <div style={{
-          fontSize: '14px', color: isDark ? '#cbd5e1' : '#334155',
-          lineHeight: 1.75, whiteSpace: 'pre-line',
-          borderTop: `1px solid ${isDark ? 'rgba(255,255,255,0.06)' : '#f1f5f9'}`,
-          paddingTop: '14px',
-        }}>
+        <div style={{ fontSize: '14px', color: isDark ? '#cbd5e1' : '#334155', lineHeight: 1.75, whiteSpace: 'pre-line', borderTop: `1px solid ${isDark ? 'rgba(255,255,255,0.06)' : '#f1f5f9'}`, paddingTop: '14px' }}>
           {post.content}
         </div>
-
-        {/* Like */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', paddingTop: '4px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <button onClick={handleLike} style={{
             background: liked ? (isDark ? 'rgba(239,68,68,0.15)' : '#fff1f2') : (isDark ? 'rgba(255,255,255,0.06)' : '#f8fafc'),
             border: `1px solid ${liked ? '#ef4444' : (isDark ? 'rgba(255,255,255,0.1)' : '#e2e8f0')}`,
-            borderRadius: '20px', padding: '5px 14px',
-            cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px',
+            borderRadius: '20px', padding: '5px 14px', cursor: 'pointer',
+            display: 'flex', alignItems: 'center', gap: '6px',
             fontSize: '13px', fontWeight: 600, transition: 'all 0.15s',
             color: liked ? '#ef4444' : (isDark ? '#94a3b8' : '#64748b'),
           }}>
             {liked ? '❤️' : '🤍'} {likeCount}
           </button>
-          <span style={{ fontSize: '12px', color: isDark ? '#64748b' : '#94a3b8' }}>
-            💬 {comments.length} bình luận
-          </span>
+          <span style={{ fontSize: '12px', color: isDark ? '#64748b' : '#94a3b8' }}>💬 {totalComments} bình luận</span>
         </div>
       </div>
 
       {/* Comments section */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        <h3 style={{
-          fontSize: '13px', fontWeight: 700,
-          color: isDark ? '#64748b' : '#94a3b8',
-          textTransform: 'uppercase', letterSpacing: '0.6px',
-          marginBottom: '2px',
-        }}>
-          Bình luận ({topLevel.length})
-          {Object.values(replyMap).flat().length > 0 && (
-            <span style={{ fontWeight: 400, marginLeft: '6px', textTransform: 'none', letterSpacing: 0 }}>
-              · {Object.values(replyMap).flat().length} phản hồi
-            </span>
-          )}
+        <h3 style={{ fontSize: '13px', fontWeight: 700, color: isDark ? '#64748b' : '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.6px' }}>
+          Bình luận ({totalComments})
         </h3>
 
-        {/* Thread list */}
-        {topLevel.map(cm => (
-          <CommentThread
-            key={cm.id}
-            comment={cm}
-            replies={replyMap[cm.id] || []}
+        {tree.map(node => (
+          <CommentItem
+            key={node.id}
+            node={node}
             userId={userId}
             isDark={isDark}
+            depth={0}
             onReply={handleReply}
             onDelete={handleDeleteComment}
           />
         ))}
 
-        {topLevel.length === 0 && (
+        {tree.length === 0 && (
           <div style={{
             textAlign: 'center', padding: '28px',
             background: isDark ? 'rgba(255,255,255,0.02)' : '#fafafa',
             border: `1px dashed ${isDark ? 'rgba(255,255,255,0.08)' : '#e2e8f0'}`,
             borderRadius: '10px', color: isDark ? '#64748b' : '#94a3b8', fontSize: '13px',
           }}>
-            Chưa có bình luận nào. Hãy là người đầu tiên!
+            Chưa có bình luận. Hãy là người đầu tiên!
           </div>
         )}
 
-        {/* New top-level comment box */}
+        {/* New top-level comment */}
         <div style={{ ...card, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '4px' }}>
           <textarea
             ref={textareaRef}
@@ -602,7 +561,7 @@ function PostDetail({
               background: 'linear-gradient(135deg,#6366f1,#8b5cf6)',
               border: 'none', borderRadius: '8px', padding: '7px 18px',
               color: '#fff', fontSize: '13px', fontWeight: 600, cursor: 'pointer',
-              opacity: (submitting || !commentText.trim()) ? 0.5 : 1, transition: 'opacity 0.15s',
+              opacity: (submitting || !commentText.trim()) ? 0.5 : 1,
             }}>
               {submitting ? 'Đang gửi…' : '✉️ Gửi bình luận'}
             </button>
@@ -626,13 +585,33 @@ function CreatePostModal({
   const [title, setTitle]     = useState('')
   const [content, setContent] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [aiLoading, setAiLoading]   = useState(false)
   const [err, setErr]         = useState('')
+  const [aiErr, setAiErr]     = useState('')
+
+  // ── AI draft ──
+  const handleAIDraft = async () => {
+    setAiErr('')
+    setAiLoading(true)
+    try {
+      const res  = await authFetch('/api/forum/ai-draft', { method: 'POST' })
+      const data = await res.json() as any
+      if (res.ok && data.success) {
+        setTitle(data.title)
+        setContent(data.content)
+        setErr('')
+      } else {
+        setAiErr(data.message || 'AI không thể tạo bài lúc này.')
+      }
+    } catch { setAiErr('Lỗi kết nối tới AI.') }
+    setAiLoading(false)
+  }
 
   const handleSubmit = async () => {
     setErr('')
-    if (!title.trim()) { setErr('Vui lòng nhập tiêu đề.'); return }
-    if (title.trim().length < 5) { setErr('Tiêu đề phải có ít nhất 5 ký tự.'); return }
-    if (!content.trim()) { setErr('Vui lòng nhập nội dung.'); return }
+    if (!title.trim())             { setErr('Vui lòng nhập tiêu đề.'); return }
+    if (title.trim().length < 5)   { setErr('Tiêu đề phải có ít nhất 5 ký tự.'); return }
+    if (!content.trim())           { setErr('Vui lòng nhập nội dung.'); return }
     setSubmitting(true)
     try {
       const res  = await authFetch('/api/forum/posts', {
@@ -665,13 +644,66 @@ function CreatePostModal({
         background: isDark ? '#0f172a' : '#ffffff',
         border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : '#e2e8f0'}`,
         borderRadius: '16px', padding: '24px',
-        width: '100%', maxWidth: '560px',
+        width: '100%', maxWidth: '580px',
         display: 'flex', flexDirection: 'column', gap: '14px',
         boxShadow: '0 20px 60px rgba(0,0,0,0.4)',
+        maxHeight: '90vh', overflowY: 'auto',
       }}>
-        <h2 style={{ fontSize: '17px', fontWeight: 700, color: isDark ? '#e2e8f0' : '#0f172a', margin: 0 }}>
-          ✍️ Tạo bài viết mới
-        </h2>
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <h2 style={{ fontSize: '17px', fontWeight: 700, color: isDark ? '#e2e8f0' : '#0f172a', margin: 0 }}>
+            ✍️ Tạo bài viết mới
+          </h2>
+          {/* AI Draft button */}
+          <button
+            onClick={handleAIDraft}
+            disabled={aiLoading}
+            style={{
+              background: aiLoading
+                ? (isDark ? 'rgba(99,102,241,0.12)' : '#ede9fe')
+                : 'linear-gradient(135deg,#6366f1,#8b5cf6)',
+              border: `1px solid ${isDark ? 'rgba(99,102,241,0.4)' : '#818cf8'}`,
+              borderRadius: '8px', padding: '7px 14px',
+              color: aiLoading ? (isDark ? '#818cf8' : '#6366f1') : '#fff',
+              fontSize: '12px', fontWeight: 600, cursor: aiLoading ? 'wait' : 'pointer',
+              display: 'flex', alignItems: 'center', gap: '6px',
+              transition: 'all 0.15s', flexShrink: 0,
+              opacity: aiLoading ? 0.8 : 1,
+            }}
+            title="AI đọc dữ liệu học tập của bạn và viết bài thay bạn"
+          >
+            {aiLoading ? (
+              <>
+                <span style={{
+                  display: 'inline-block', width: '12px', height: '12px',
+                  border: `2px solid ${isDark ? '#818cf8' : '#6366f1'}`,
+                  borderTopColor: 'transparent', borderRadius: '50%',
+                  animation: 'spin 0.7s linear infinite',
+                }}/>
+                AI đang viết…
+              </>
+            ) : (
+              <>✨ Nhờ AI viết hộ</>
+            )}
+          </button>
+        </div>
+
+        {/* AI description callout */}
+        <div style={{
+          background: isDark ? 'rgba(99,102,241,0.08)' : '#f0f0ff',
+          border: `1px solid ${isDark ? 'rgba(99,102,241,0.2)' : '#c7d2fe'}`,
+          borderRadius: '8px', padding: '10px 12px',
+          fontSize: '12px', color: isDark ? '#a5b4fc' : '#4338ca',
+          lineHeight: 1.5,
+        }}>
+          💡 <strong>AI viết hộ:</strong> AI sẽ đọc dữ liệu học tập thực tế của bạn, rồi viết một bài thảo luận chân thực — như thể chính bạn đang chia sẻ. Bạn có thể chỉnh sửa lại trước khi đăng.
+        </div>
+
+        {aiErr && (
+          <div style={{ fontSize: '13px', color: '#f59e0b', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: '8px', padding: '8px 12px' }}>
+            ⚠️ {aiErr}
+          </div>
+        )}
 
         <div>
           <label style={{ fontSize: '12px', color: isDark ? '#94a3b8' : '#64748b', fontWeight: 600, display: 'block', marginBottom: '6px' }}>Tiêu đề *</label>
@@ -714,26 +746,19 @@ function CreatePostModal({
           </button>
         </div>
       </div>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>
   )
 }
 
-// ─── NavBar (shared) ──────────────────────────────────────────────────────────
+// ─── NavBar ───────────────────────────────────────────────────────────────────
 
 function NavBar({
-  isDark, displayName, email,
-  onNavigate, currentPage,
-  onToggleTheme,
-  onChangePass, onLogout,
+  isDark, displayName, email, onNavigate, currentPage, onToggleTheme, onChangePass, onLogout,
 }: {
-  isDark: boolean
-  displayName: string
-  email: string
-  onNavigate: (p: any) => void
-  currentPage: string
-  onToggleTheme?: () => void
-  onChangePass: () => void
-  onLogout: () => void
+  isDark: boolean; displayName: string; email: string
+  onNavigate: (p: any) => void; currentPage: string
+  onToggleTheme?: () => void; onChangePass: () => void; onLogout: () => void
 }) {
   return (
     <nav style={{
@@ -770,7 +795,6 @@ function NavBar({
           ))}
         </div>
       </div>
-
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
         <button onClick={onToggleTheme} style={{
           padding: '4px 10px', borderRadius: '8px', flexShrink: 0,
@@ -828,22 +852,12 @@ export default function ForumPage({
     try {
       const res  = await authFetch(`/api/forum/posts?page=${p}&limit=15&sort=${s}`)
       const data = await res.json() as any
-      if (res.ok) {
-        setPosts(data.posts)
-        setTotalPages(data.total_pages)
-        setPage(p)
-      }
+      if (res.ok) { setPosts(data.posts); setTotalPages(data.total_pages); setPage(p) }
     } catch {}
     setLoading(false)
   }, [authFetch, sort])
 
-  useEffect(() => { loadPosts(1, sort) }, [sort]) // re-fetch when sort changes
-
-  const handleSortChange = (newSort: SortMode) => {
-    if (newSort === sort) return
-    setSort(newSort)
-    // loadPosts called via useEffect above
-  }
+  useEffect(() => { loadPosts(1, sort) }, [sort])
 
   const handleDelete = async (id: number) => {
     if (!confirm('Bạn có chắc muốn xóa bài viết này?')) return
@@ -853,25 +867,17 @@ export default function ForumPage({
     } catch {}
   }
 
-  // ── Sort toggle button style ───────────────────────────────────────────────
   const sortBtn = (mode: SortMode, label: string, icon: string) => {
     const active = sort === mode
     return (
-      <button
-        key={mode}
-        onClick={() => handleSortChange(mode)}
-        style={{
-          padding: '5px 14px', borderRadius: '20px',
-          border: `1px solid ${active ? '#6366f1' : (isDark ? 'rgba(255,255,255,0.1)' : '#e2e8f0')}`,
-          background: active
-            ? (isDark ? 'rgba(99,102,241,0.18)' : '#ede9fe')
-            : (isDark ? 'rgba(255,255,255,0.04)' : '#f8fafc'),
-          color: active ? '#818cf8' : (isDark ? '#94a3b8' : '#64748b'),
-          fontSize: '12px', fontWeight: active ? 700 : 500, cursor: 'pointer',
-          display: 'flex', alignItems: 'center', gap: '4px',
-          transition: 'all 0.15s',
-        }}
-      >
+      <button key={mode} onClick={() => setSort(mode)} style={{
+        padding: '5px 14px', borderRadius: '20px',
+        border: `1px solid ${active ? '#6366f1' : (isDark ? 'rgba(255,255,255,0.1)' : '#e2e8f0')}`,
+        background: active ? (isDark ? 'rgba(99,102,241,0.18)' : '#ede9fe') : (isDark ? 'rgba(255,255,255,0.04)' : '#f8fafc'),
+        color: active ? '#818cf8' : (isDark ? '#94a3b8' : '#64748b'),
+        fontSize: '12px', fontWeight: active ? 700 : 500, cursor: 'pointer',
+        display: 'flex', alignItems: 'center', gap: '4px', transition: 'all 0.15s',
+      }}>
         {icon} {label}
       </button>
     )
@@ -894,24 +900,20 @@ export default function ForumPage({
       />
 
       <div style={{ maxWidth: '720px', margin: '0 auto', padding: '24px 16px 80px' }}>
-
         {selectedPostId !== null ? (
           <PostDetail
-            postId={selectedPostId}
-            userId={user.id}
-            isDark={isDark}
-            authFetch={authFetch}
+            postId={selectedPostId} userId={user.id} isDark={isDark} authFetch={authFetch}
             onBack={() => { setSelectedPostId(null); loadPosts(page, sort) }}
           />
         ) : (
           <>
-            {/* Header row */}
+            {/* Header */}
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
               <div>
                 <h1 style={{ fontSize: '20px', fontWeight: 700, color: isDark ? '#e2e8f0' : '#0f172a', margin: 0, fontFamily: 'Space Grotesk, sans-serif' }}>
                   💬 Diễn đàn cộng đồng
                 </h1>
-                <p style={{ fontSize: '13px', color: isDark ? '#64748b' : '#94a3b8', marginTop: '4px', margin: '4px 0 0' }}>
+                <p style={{ fontSize: '13px', color: isDark ? '#64748b' : '#94a3b8', margin: '4px 0 0' }}>
                   Chia sẻ kinh nghiệm và thảo luận cùng cộng đồng học tập
                 </p>
               </div>
@@ -920,8 +922,7 @@ export default function ForumPage({
                 border: 'none', borderRadius: '10px', padding: '9px 18px',
                 color: '#fff', fontSize: '13px', fontWeight: 600, cursor: 'pointer',
                 display: 'flex', alignItems: 'center', gap: '6px',
-                boxShadow: '0 2px 8px rgba(99,102,241,0.35)',
-                flexShrink: 0,
+                boxShadow: '0 2px 8px rgba(99,102,241,0.35)', flexShrink: 0,
               }}>
                 ✍️ Viết bài mới
               </button>
@@ -929,22 +930,19 @@ export default function ForumPage({
 
             {/* Sort bar */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
-              <span style={{ fontSize: '12px', color: isDark ? '#64748b' : '#94a3b8', fontWeight: 500, marginRight: '2px' }}>Sắp xếp:</span>
+              <span style={{ fontSize: '12px', color: isDark ? '#64748b' : '#94a3b8', fontWeight: 500 }}>Sắp xếp:</span>
               {sortBtn('newest', 'Mới nhất', '🕐')}
-              {sortBtn('top',    'Nhiều tim nhất', '❤️')}
+              {sortBtn('top', 'Nhiều tim nhất', '❤️')}
             </div>
 
             {/* Post list */}
             {loading ? (
-              <div style={{ display: 'flex', justifyContent: 'center', padding: '60px', color: isDark ? '#64748b' : '#94a3b8' }}>
-                Đang tải…
-              </div>
+              <div style={{ textAlign: 'center', padding: '60px', color: isDark ? '#64748b' : '#94a3b8' }}>Đang tải…</div>
             ) : posts.length === 0 ? (
               <div style={{
                 textAlign: 'center', padding: '60px 20px',
                 background: isDark ? 'rgba(255,255,255,0.03)' : '#ffffff',
-                border: `1px solid ${isDark ? 'rgba(255,255,255,0.07)' : '#e2e8f0'}`,
-                borderRadius: '12px',
+                border: `1px solid ${isDark ? 'rgba(255,255,255,0.07)' : '#e2e8f0'}`, borderRadius: '12px',
               }}>
                 <div style={{ fontSize: '40px', marginBottom: '12px' }}>💬</div>
                 <div style={{ fontSize: '15px', fontWeight: 600, color: isDark ? '#94a3b8' : '#475569', marginBottom: '6px' }}>Chưa có bài viết nào</div>
@@ -953,11 +951,8 @@ export default function ForumPage({
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 {posts.map(p => (
-                  <PostCard
-                    key={p.id} post={p} userId={user.id} isDark={isDark}
-                    onClick={() => setSelectedPostId(p.id)}
-                    onDelete={handleDelete}
-                  />
+                  <PostCard key={p.id} post={p} userId={user.id} isDark={isDark}
+                    onClick={() => setSelectedPostId(p.id)} onDelete={handleDelete} />
                 ))}
               </div>
             )}
@@ -985,19 +980,14 @@ export default function ForumPage({
         <img src="/static/and-logo.png" alt="A.N.D" style={{ width: '52px', filter: isDark ? 'brightness(1.2)' : 'none' }} />
       </div>
 
-      {/* Create post modal */}
       {showCreate && (
         <CreatePostModal
           isDark={isDark} authFetch={authFetch}
           onClose={() => setShowCreate(false)}
-          onCreated={post => {
-            setPosts(prev => [post as ForumPost, ...prev])
-            setSelectedPostId(post.id)
-          }}
+          onCreated={post => { setPosts(prev => [post as ForumPost, ...prev]); setSelectedPostId(post.id) }}
         />
       )}
 
-      {/* Change password modal */}
       {showChangePass && (
         <ChangePasswordModal
           authFetch={authFetch}
@@ -1007,7 +997,6 @@ export default function ForumPage({
         />
       )}
 
-      {/* ChatBot */}
       <ChatBot authFetch={authFetch} theme={theme} user={user} />
     </div>
   )
