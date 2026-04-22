@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { authMiddleware } from '../middleware/auth'
+import { getExceptionMeta, EntryInput } from '../services/gemini'
 
 type Bindings = { DB: D1Database; JWT_SECRET: string }
 type Variables = { userId: number; email: string }
@@ -14,16 +15,58 @@ function parseRow(r: Record<string, unknown>) {
 }
 
 // GET /api/reports/latest
+// Trả về báo cáo mới nhất + tính exception metadata (session_count, confidence_score, is_outlier)
+// từ lịch sử phiên học để UI hiển thị "Mức độ tin cậy" và "Điều kiện áp dụng" chính xác.
 reports.get('/latest', async (c) => {
   try {
+    const userId = c.get('userId')
+
+    // 1. Lấy báo cáo mới nhất
     const row = await c.env.DB.prepare(`
       SELECT r.*, e.study_hours, e.focus_level, e.distraction_count,
              e.distracting_factors, e.goal_achieved, e.emotional_state,
-             e.dropout_feeling, e.session_date
+             e.dropout_feeling, e.session_date, e.session_number, e.session_time
       FROM analysis_reports r JOIN daily_entries e ON r.entry_id = e.id
       WHERE r.user_id = ? ORDER BY r.created_at DESC LIMIT 1
-    `).bind(c.get('userId')).first()
-    return c.json({ report: row ? parseRow(row as Record<string, unknown>) : null })
+    `).bind(userId).first<Record<string, unknown>>()
+
+    if (!row) return c.json({ report: null })
+
+    const parsed = parseRow(row)
+
+    // 2. Lấy lịch sử phiên học để tính exception metadata
+    //    Lấy phiên ngay TRƯỚC entry này (bỏ chính nó để tránh bias)
+    const [historyRows, totalRow] = await Promise.all([
+      c.env.DB.prepare(`
+        SELECT focus_level, dropout_feeling, study_hours, distraction_count,
+               goal_achieved, session_date, session_number
+        FROM daily_entries
+        WHERE user_id = ? AND id != ?
+        ORDER BY session_date DESC, session_number DESC
+        LIMIT 16
+      `).bind(userId, row.entry_id as number).all<Record<string, unknown>>(),
+      c.env.DB.prepare(`
+        SELECT COUNT(*) as cnt FROM daily_entries WHERE user_id = ?
+      `).bind(userId).first<{ cnt: number }>(),
+    ])
+
+    // 3. Tái tạo EntryInput từ row để tính metadata
+    const todayInput: EntryInput = {
+      study_hours:        Number(row.study_hours       ?? 0),
+      focus_level:        Number(row.focus_level       ?? 3),
+      distraction_count:  Number(row.distraction_count ?? 0),
+      goal_achieved:      Boolean(row.goal_achieved),
+      dropout_feeling:    Number(row.dropout_feeling   ?? 3),
+      session_date:       String(row.session_date      ?? ''),
+      session_number:     Number(row.session_number    ?? 1),
+    }
+
+    const meta = getExceptionMeta(todayInput, historyRows.results)
+    const totalSessions = totalRow?.cnt ?? 0
+
+    return c.json({
+      report: { ...parsed, ...meta, total_sessions: totalSessions }
+    })
   } catch (err) {
     console.error('Get latest report error:', err)
     return c.json({ error: 'Failed to fetch report' }, 500)

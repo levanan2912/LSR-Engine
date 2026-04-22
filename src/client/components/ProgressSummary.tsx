@@ -194,16 +194,21 @@ function analyzeProgress(sessions: SessionRecord[]): Analysis | null {
 
 // ─── Sparkline SVG ─────────────────────────────────────────────────────────────
 function Sparkline({
-  pts, valueKey, color, height = 64,
+  pts, valueKey, color, height = 64, isDark = true,
 }: {
   pts: TrendPoint[]
   valueKey: keyof Pick<TrendPoint, 'focus' | 'dropout' | 'hours' | 'goalRate' | 'distractions'>
   color: string
   height?: number
+  isDark?: boolean
 }) {
+  const emptyColor = isDark ? 'rgba(255,255,255,0.20)' : 'rgba(0,0,0,0.25)'
+  const gridColor  = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.06)'
+  const dotStroke  = isDark ? '#080f26' : '#f8fafc'
+
   if (pts.length < 2) return (
     <div style={{ height: `${height}px`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.2)', fontFamily: 'Space Grotesk, sans-serif' }}>Chưa đủ dữ liệu</span>
+      <span style={{ fontSize: '11px', color: emptyColor, fontFamily: 'Space Grotesk, sans-serif' }}>Chưa đủ dữ liệu</span>
     </div>
   )
   const vals = pts.map(p => p[valueKey] as number)
@@ -223,10 +228,9 @@ function Sparkline({
           <stop offset="100%" stopColor={color} stopOpacity="0.02" />
         </linearGradient>
       </defs>
-      {/* Grid lines */}
       {[0, 0.5, 1].map(f => (
         <line key={f} x1={px} y1={py + f * (H - py * 2)} x2={W - px} y2={py + f * (H - py * 2)}
-          stroke="rgba(255,255,255,0.04)" strokeWidth="1" />
+          stroke={gridColor} strokeWidth="1" />
       ))}
       <path d={area} fill={`url(#${gid})`} />
       <path d={path} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
@@ -234,11 +238,10 @@ function Sparkline({
         <circle key={i} cx={tx(i)} cy={ty(p[valueKey] as number)}
           r={i === pts.length - 1 ? 5 : 2.5}
           fill={i === pts.length - 1 ? color : `${color}77`}
-          stroke={i === pts.length - 1 ? '#080f26' : 'none'}
+          stroke={i === pts.length - 1 ? dotStroke : 'none'}
           strokeWidth="1.5"
         />
       ))}
-      {/* Latest value label */}
       {pts.length > 0 && (() => {
         const lv = pts[pts.length - 1][valueKey] as number
         const lx = tx(pts.length - 1), ly = ty(lv)
@@ -254,8 +257,8 @@ function Sparkline({
 }
 
 // ─── Delta badge ────────────────────────────────────────────────────────────────
-function Delta({ val, inverse = false, suffix = '' }: { val: number; inverse?: boolean; suffix?: string }) {
-  if (Math.abs(val) < 0.05) return <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: '12px', fontFamily: 'JetBrains Mono' }}>±0{suffix}</span>
+function Delta({ val, inverse = false, suffix = '', isDark = true }: { val: number; inverse?: boolean; suffix?: string; isDark?: boolean }) {
+  if (Math.abs(val) < 0.05) return <span style={{ color: isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.28)', fontSize: '12px', fontFamily: 'JetBrains Mono' }}>±0{suffix}</span>
   const pos = inverse ? val < 0 : val > 0
   const color = pos ? '#34d399' : '#f87171'
   return <span style={{ color, fontSize: '12px', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}>{val > 0 ? '+' : ''}{val % 1 === 0 ? val.toFixed(0) : val.toFixed(1)}{suffix}</span>
@@ -263,23 +266,23 @@ function Delta({ val, inverse = false, suffix = '' }: { val: number; inverse?: b
 
 // ─── Trend icon ─────────────────────────────────────────────────────────────────
 function TrendIcon({ dir, focusKey = true }: { dir: TrendDir; focusKey?: boolean }) {
-  // For focus/goal: up=good(green), down=bad(red)
-  // For dropout/distractions: up=bad(red), down=good(green)
   const color = dir === 'stable' ? '#64748b'
     : (dir === 'up') === focusKey ? '#34d399' : '#f87171'
   const icon = dir === 'up' ? '↗' : dir === 'down' ? '↘' : '→'
   return <span style={{ color, fontSize: '18px', fontWeight: 800, fontFamily: 'JetBrains Mono, monospace', lineHeight: 1 }}>{icon}</span>
 }
 
-// ─── Metric row (for today column) ─────────────────────────────────────────────
-function MetricRow({ label, value, color, delta, inverseDelta }: {
-  label: string; value: string; color: string; delta?: number; inverseDelta?: boolean
+// ─── Metric row ─────────────────────────────────────────────────────────────────
+function MetricRow({ label, value, color, delta, inverseDelta, isDark = true }: {
+  label: string; value: string; color: string; delta?: number; inverseDelta?: boolean; isDark?: boolean
 }) {
+  const labelColor  = isDark ? 'rgba(255,255,255,0.50)' : 'rgba(0,0,0,0.52)'
+  const borderColor = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.07)'
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-      <span style={{ fontSize: '13px', color: 'rgba(255,255,255,0.5)', fontFamily: 'Space Grotesk, sans-serif' }}>{label}</span>
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: `1px solid ${borderColor}` }}>
+      <span style={{ fontSize: '13px', color: labelColor, fontFamily: 'Space Grotesk, sans-serif' }}>{label}</span>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-        {delta !== undefined && <Delta val={delta} inverse={inverseDelta} />}
+        {delta !== undefined && <Delta val={delta} inverse={inverseDelta} isDark={isDark} />}
         <span style={{ fontSize: '16px', fontWeight: 800, color, fontFamily: 'JetBrains Mono, monospace' }}>{value}</span>
       </div>
     </div>
@@ -290,18 +293,41 @@ function MetricRow({ label, value, color, delta, inverseDelta }: {
 interface ProgressSummaryProps {
   sessions: SessionRecord[]
   loading?: boolean
-  size?: 'normal' | 'large'   // 'large' for HistoryPage
+  size?: 'normal' | 'large'
+  isDark?: boolean
 }
 
-export default function ProgressSummary({ sessions, loading = false, size = 'normal' }: ProgressSummaryProps) {
+export default function ProgressSummary({ sessions, loading = false, size = 'normal', isDark = true }: ProgressSummaryProps) {
   const [expanded, setExpanded] = useState<'short' | 'long' | 'baseline' | null>(null)
   const lg = size === 'large'
 
   const analysis = useMemo(() => analyzeProgress(sessions), [sessions])
 
+  // ── Adaptive color tokens ─────────────────────────────────────────────────
+  const t = {
+    textPrimary:   isDark ? 'rgba(255,255,255,0.92)' : 'rgba(0,0,0,0.85)',
+    textSecondary: isDark ? 'rgba(255,255,255,0.58)' : 'rgba(0,0,0,0.55)',
+    textMuted:     isDark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.38)',
+    textFaint:     isDark ? 'rgba(255,255,255,0.20)' : 'rgba(0,0,0,0.22)',
+    textEmpty:     isDark ? 'rgba(255,255,255,0.20)' : 'rgba(0,0,0,0.25)',
+    bgCard:        isDark ? 'rgba(255,255,255,0.025)' : 'rgba(0,0,0,0.028)',
+    bgCardInset:   isDark ? 'rgba(99,102,241,0.06)'  : 'rgba(99,102,241,0.07)',
+    borderCard:    isDark ? 'rgba(255,255,255,0.07)'  : 'rgba(0,0,0,0.09)',
+    borderInset:   isDark ? 'rgba(99,102,241,0.12)'   : 'rgba(99,102,241,0.18)',
+    borderExpand:  isDark ? 'rgba(255,255,255,0.05)'  : 'rgba(0,0,0,0.07)',
+    headerBg:      isDark ? 'rgba(255,255,255,0.02)'  : 'rgba(0,0,0,0.025)',
+    anomalyBg:     isDark ? 'rgba(245,158,11,0.08)'   : 'rgba(245,158,11,0.07)',
+    anomalyBorder: isDark ? 'rgba(245,158,11,0.22)'   : 'rgba(245,158,11,0.30)',
+    declineBg:     isDark ? 'rgba(248,113,113,0.08)'  : 'rgba(248,113,113,0.07)',
+    declineBorder: isDark ? 'rgba(248,113,113,0.22)'  : 'rgba(248,113,113,0.28)',
+    stdBg:         isDark ? 'rgba(99,102,241,0.06)'   : 'rgba(99,102,241,0.07)',
+    stdBorder:     isDark ? 'rgba(99,102,241,0.12)'   : 'rgba(99,102,241,0.18)',
+    expandArrow:   isDark ? 'rgba(255,255,255,0.20)'  : 'rgba(0,0,0,0.25)',
+  }
+
   if (loading) return (
     <div style={{ padding: lg ? '28px' : '20px', textAlign: 'center' }}>
-      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', color: 'rgba(255,255,255,0.3)', fontFamily: 'Space Grotesk, sans-serif', fontSize: lg ? '14px' : '12px' }}>
+      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', color: t.textMuted, fontFamily: 'Space Grotesk, sans-serif', fontSize: lg ? '14px' : '12px' }}>
         <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#6366f1', animation: 'psPulse 1s infinite' }} />
         Đang phân tích tiến trình…
       </div>
@@ -309,7 +335,7 @@ export default function ProgressSummary({ sessions, loading = false, size = 'nor
   )
 
   if (!analysis) return (
-    <div style={{ padding: lg ? '24px' : '16px', textAlign: 'center', color: 'rgba(255,255,255,0.2)', fontFamily: 'Space Grotesk, sans-serif', fontSize: lg ? '14px' : '12px' }}>
+    <div style={{ padding: lg ? '24px' : '16px', textAlign: 'center', color: t.textEmpty, fontFamily: 'Space Grotesk, sans-serif', fontSize: lg ? '14px' : '12px' }}>
       Cần ít nhất 3 phiên để phân tích tiến trình.
     </div>
   )
@@ -331,7 +357,7 @@ export default function ProgressSummary({ sessions, loading = false, size = 'nor
 
       {/* ══ Header status card ══ */}
       <div style={{
-        background: `linear-gradient(135deg, ${badgeColor}12 0%, rgba(255,255,255,0.02) 100%)`,
+        background: `linear-gradient(135deg, ${badgeColor}12 0%, ${isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)'} 100%)`,
         border: `1px solid ${badgeColor}35`,
         borderLeft: `4px solid ${badgeColor}`,
         borderRadius: lg ? '18px' : '14px',
@@ -339,7 +365,6 @@ export default function ProgressSummary({ sessions, loading = false, size = 'nor
         marginBottom: lg ? '14px' : '10px',
         position: 'relative', overflow: 'hidden',
       }}>
-        {/* Background glow */}
         <div style={{ position: 'absolute', top: '-40px', right: '-40px', width: '180px', height: '180px', borderRadius: '50%', background: `radial-gradient(circle, ${badgeColor}0d 0%, transparent 70%)`, pointerEvents: 'none' }} />
 
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap', marginBottom: '12px' }}>
@@ -350,23 +375,23 @@ export default function ProgressSummary({ sessions, loading = false, size = 'nor
               <span style={{ fontSize: lg ? '12px' : '10.5px', fontWeight: 700, color: badgeColor, textTransform: 'uppercase', letterSpacing: '0.6px' }}>{badgeLabel}</span>
             </div>
             {/* Headline */}
-            <p style={{ margin: 0, fontSize: lg ? '18px' : '13.5px', fontWeight: 700, color: 'rgba(255,255,255,0.94)', lineHeight: 1.4, letterSpacing: '-0.2px' }}>{headline}</p>
+            <p style={{ margin: 0, fontSize: lg ? '18px' : '13.5px', fontWeight: 700, color: t.textPrimary, lineHeight: 1.4, letterSpacing: '-0.2px' }}>{headline}</p>
           </div>
           {/* Session count */}
           <div style={{ textAlign: 'right', flexShrink: 0 }}>
             <div style={{ fontSize: lg ? '36px' : '24px', fontWeight: 800, color: badgeColor, fontFamily: 'JetBrains Mono, monospace', lineHeight: 1 }}>{n}</div>
-            <div style={{ fontSize: lg ? '12px' : '10px', color: 'rgba(255,255,255,0.3)', marginTop: '3px' }}>phiên học</div>
+            <div style={{ fontSize: lg ? '12px' : '10px', color: t.textMuted, marginTop: '3px' }}>phiên học</div>
           </div>
         </div>
 
         {/* Subline */}
-        <p style={{ margin: 0, fontSize: lg ? '14px' : '12px', color: 'rgba(255,255,255,0.58)', lineHeight: 1.7 }}>{subline}</p>
+        <p style={{ margin: 0, fontSize: lg ? '14px' : '12px', color: t.textSecondary, lineHeight: 1.7 }}>{subline}</p>
 
         {/* Anomaly callout */}
         {isAnomaly && anomalyReason && (
-          <div style={{ marginTop: lg ? '16px' : '10px', padding: lg ? '14px 16px' : '8px 12px', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.22)', borderRadius: '10px', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+          <div style={{ marginTop: lg ? '16px' : '10px', padding: lg ? '14px 16px' : '8px 12px', background: t.anomalyBg, border: `1px solid ${t.anomalyBorder}`, borderRadius: '10px', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
             <span style={{ fontSize: lg ? '16px' : '13px', flexShrink: 0 }}>⚡</span>
-            <p style={{ margin: 0, fontSize: lg ? '13px' : '11.5px', color: 'rgba(255,255,255,0.7)', lineHeight: 1.6 }}>
+            <p style={{ margin: 0, fontSize: lg ? '13px' : '11.5px', color: t.textSecondary, lineHeight: 1.6 }}>
               <strong style={{ color: '#fbbf24' }}>Phiên này khác với lịch sử của bạn:</strong> {anomalyReason}. Hệ thống đánh dấu là <em>ngoại lệ nhất thời</em> và không tính vào xu hướng cho đến khi tín hiệu lặp lại.
             </p>
           </div>
@@ -374,9 +399,9 @@ export default function ProgressSummary({ sessions, loading = false, size = 'nor
 
         {/* Consecutive decline warning */}
         {consecutiveDecline >= 3 && !isAnomaly && (
-          <div style={{ marginTop: lg ? '16px' : '10px', padding: lg ? '14px 16px' : '8px 12px', background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.22)', borderRadius: '10px', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+          <div style={{ marginTop: lg ? '16px' : '10px', padding: lg ? '14px 16px' : '8px 12px', background: t.declineBg, border: `1px solid ${t.declineBorder}`, borderRadius: '10px', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
             <span style={{ fontSize: lg ? '16px' : '13px', flexShrink: 0 }}>🔴</span>
-            <p style={{ margin: 0, fontSize: lg ? '13px' : '11.5px', color: 'rgba(255,255,255,0.7)', lineHeight: 1.6 }}>
+            <p style={{ margin: 0, fontSize: lg ? '13px' : '11.5px', color: t.textSecondary, lineHeight: 1.6 }}>
               <strong style={{ color: '#f87171' }}>{consecutiveDecline} phiên liên tiếp</strong> có chỉ số dưới baseline cá nhân — tín hiệu thực sự, không phải ngẫu nhiên. Xem báo cáo AI để biết hướng can thiệp.
             </p>
           </div>
@@ -387,58 +412,57 @@ export default function ProgressSummary({ sessions, loading = false, size = 'nor
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: lg ? '12px' : '8px', marginBottom: lg ? '14px' : '10px' }}>
 
         {/* ── Hôm nay ── */}
-        <div style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: lg ? '16px' : '12px', padding: lg ? '20px 22px' : '12px 14px' }}>
-          <div style={{ fontSize: lg ? '11px' : '10px', fontWeight: 700, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: lg ? '14px' : '10px' }}>📸 Ảnh chụp hôm nay</div>
+        <div style={{ background: t.bgCard, border: `1px solid ${t.borderCard}`, borderRadius: lg ? '16px' : '12px', padding: lg ? '20px 22px' : '12px 14px' }}>
+          <div style={{ fontSize: lg ? '11px' : '10px', fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: lg ? '14px' : '10px' }}>📸 Ảnh chụp hôm nay</div>
           {latest ? (
             <>
-              <MetricRow label="Tập trung" value={`${latest.focus_level}/5`} color="#60a5fa" delta={todayVsBaseline?.focus} />
-              <MetricRow label="Cảm giác bỏ cuộc" value={`${latest.dropout_feeling}/5`} color="#f87171" delta={todayVsBaseline?.dropout} inverseDelta />
-              <MetricRow label="Giờ học" value={`${Number(latest.study_hours).toFixed(1)}h`} color="#34d399" />
-              <MetricRow label="Xao nhãng" value={`${latest.distraction_count ?? 0} lần`} color="#f59e0b" />
+              <MetricRow label="Tập trung" value={`${latest.focus_level}/5`} color="#60a5fa" delta={todayVsBaseline?.focus} isDark={isDark} />
+              <MetricRow label="Cảm giác bỏ cuộc" value={`${latest.dropout_feeling}/5`} color="#f87171" delta={todayVsBaseline?.dropout} inverseDelta isDark={isDark} />
+              <MetricRow label="Giờ học" value={`${Number(latest.study_hours).toFixed(1)}h`} color="#34d399" isDark={isDark} />
+              <MetricRow label="Xao nhãng" value={`${latest.distraction_count ?? 0} lần`} color="#f59e0b" isDark={isDark} />
               <div style={{ padding: '8px 0 0' }}>
                 <span style={{ fontSize: lg ? '13px' : '11.5px', color: latest.goal_achieved ? '#22c55e' : '#ef4444', fontWeight: 600 }}>
                   {latest.goal_achieved ? '✅ Đạt mục tiêu' : '❌ Chưa đạt mục tiêu'}
                 </span>
               </div>
               {baseline && (
-                <div style={{ marginTop: lg ? '14px' : '10px', padding: lg ? '10px 12px' : '8px 10px', background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.12)', borderRadius: '8px' }}>
-                  <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.3)', marginBottom: '4px' }}>vs baseline cá nhân</div>
+                <div style={{ marginTop: lg ? '14px' : '10px', padding: lg ? '10px 12px' : '8px 10px', background: t.bgCardInset, border: `1px solid ${t.borderInset}`, borderRadius: '8px' }}>
+                  <div style={{ fontSize: '10px', color: t.textMuted, marginBottom: '4px' }}>vs baseline cá nhân</div>
                   <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                     {todayVsBaseline && <>
                       <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                        <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)' }}>Focus</span>
-                        <Delta val={todayVsBaseline.focus} suffix="/5" />
+                        <span style={{ fontSize: '11px', color: t.textFaint }}>Focus</span>
+                        <Delta val={todayVsBaseline.focus} suffix="/5" isDark={isDark} />
                       </div>
                       <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                        <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)' }}>Dropout</span>
-                        <Delta val={todayVsBaseline.dropout} inverse suffix="/5" />
+                        <span style={{ fontSize: '11px', color: t.textFaint }}>Dropout</span>
+                        <Delta val={todayVsBaseline.dropout} inverse suffix="/5" isDark={isDark} />
                       </div>
                       <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                        <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)' }}>Mục tiêu</span>
-                        <Delta val={todayVsBaseline.goalRate} suffix="%" />
+                        <span style={{ fontSize: '11px', color: t.textFaint }}>Mục tiêu</span>
+                        <Delta val={todayVsBaseline.goalRate} suffix="%" isDark={isDark} />
                       </div>
                     </>}
                   </div>
                 </div>
               )}
             </>
-          ) : <span style={{ fontSize: '13px', color: 'rgba(255,255,255,0.2)' }}>Chưa có dữ liệu</span>}
+          ) : <span style={{ fontSize: '13px', color: t.textEmpty }}>Chưa có dữ liệu</span>}
         </div>
 
         {/* ── Ngắn hạn (3-7 phiên) ── */}
         <div
           onClick={() => setExpanded(e => e === 'short' ? null : 'short')}
-          style={{ background: 'rgba(255,255,255,0.025)', border: `1px solid ${expanded === 'short' ? shortColor + '55' : 'rgba(255,255,255,0.07)'}`, borderRadius: lg ? '16px' : '12px', padding: lg ? '20px 22px' : '12px 14px', cursor: 'pointer', transition: 'border-color 0.2s' }}>
+          style={{ background: t.bgCard, border: `1px solid ${expanded === 'short' ? shortColor + '55' : t.borderCard}`, borderRadius: lg ? '16px' : '12px', padding: lg ? '20px 22px' : '12px 14px', cursor: 'pointer', transition: 'border-color 0.2s' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: lg ? '6px' : '4px' }}>
-            <div style={{ fontSize: lg ? '11px' : '10px', fontWeight: 700, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>📈 3–7 phiên gần đây</div>
+            <div style={{ fontSize: lg ? '11px' : '10px', fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '0.6px' }}>📈 3–7 phiên gần đây</div>
             <TrendIcon dir={shortTrend} />
           </div>
-          <div style={{ fontSize: lg ? '12px' : '10.5px', color: 'rgba(255,255,255,0.4)', marginBottom: lg ? '14px' : '10px' }}>
+          <div style={{ fontSize: lg ? '12px' : '10.5px', color: t.textFaint, marginBottom: lg ? '14px' : '10px' }}>
             Tập trung {shortTrend === 'up' ? '↑ cải thiện' : shortTrend === 'down' ? '↓ giảm nhẹ' : '→ ổn định'} · {shortPts.length} phiên
           </div>
-          <Sparkline pts={shortPts} valueKey="focus" color={shortColor} height={lg ? 80 : 52} />
+          <Sparkline pts={shortPts} valueKey="focus" color={shortColor} height={lg ? 80 : 52} isDark={isDark} />
 
-          {/* Mini multi-metric summary */}
           <div style={{ marginTop: lg ? '14px' : '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
             {([
               { label: 'Focus TB', key: 'focus' as const, color: '#60a5fa', good: true },
@@ -451,7 +475,7 @@ export default function ProgressSummary({ sessions, loading = false, size = 'nor
               const dir = h >= 4 ? trendDir(vals.slice(Math.floor(h / 2)), vals.slice(0, Math.floor(h / 2))) : 'stable' as TrendDir
               return (
                 <div key={key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: lg ? '12px' : '10.5px', color: 'rgba(255,255,255,0.4)' }}>{label}</span>
+                  <span style={{ fontSize: lg ? '12px' : '10.5px', color: t.textFaint }}>{label}</span>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                     <span style={{ fontSize: lg ? '13px' : '11.5px', fontWeight: 700, color, fontFamily: 'JetBrains Mono, monospace' }}>{avg.toFixed(1)}</span>
                     <TrendIcon dir={dir} focusKey={good} />
@@ -465,30 +489,29 @@ export default function ProgressSummary({ sessions, loading = false, size = 'nor
         {/* ── Dài hạn (theo tuần) ── */}
         <div
           onClick={() => setExpanded(e => e === 'long' ? null : 'long')}
-          style={{ background: 'rgba(255,255,255,0.025)', border: `1px solid ${expanded === 'long' ? longColor + '55' : 'rgba(255,255,255,0.07)'}`, borderRadius: lg ? '16px' : '12px', padding: lg ? '20px 22px' : '12px 14px', cursor: 'pointer', transition: 'border-color 0.2s' }}>
+          style={{ background: t.bgCard, border: `1px solid ${expanded === 'long' ? longColor + '55' : t.borderCard}`, borderRadius: lg ? '16px' : '12px', padding: lg ? '20px 22px' : '12px 14px', cursor: 'pointer', transition: 'border-color 0.2s' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: lg ? '6px' : '4px' }}>
-            <div style={{ fontSize: lg ? '11px' : '10px', fontWeight: 700, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>📅 Xu hướng theo tuần</div>
+            <div style={{ fontSize: lg ? '11px' : '10px', fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '0.6px' }}>📅 Xu hướng theo tuần</div>
             <TrendIcon dir={longTrend} />
           </div>
-          <div style={{ fontSize: lg ? '12px' : '10.5px', color: 'rgba(255,255,255,0.4)', marginBottom: lg ? '14px' : '10px' }}>
+          <div style={{ fontSize: lg ? '12px' : '10.5px', color: t.textFaint, marginBottom: lg ? '14px' : '10px' }}>
             {weeklyPts.length >= 2
               ? `${weeklyPts.length} tuần · ${longTrend === 'up' ? 'cải thiện' : longTrend === 'down' ? 'có chiều hướng giảm' : 'ổn định'}`
               : `Chưa đủ dữ liệu tuần (${n} phiên)`}
           </div>
-          <Sparkline pts={weeklyPts.length >= 2 ? weeklyPts : shortPts} valueKey="focus" color={longColor} height={lg ? 80 : 52} />
+          <Sparkline pts={weeklyPts.length >= 2 ? weeklyPts : shortPts} valueKey="focus" color={longColor} height={lg ? 80 : 52} isDark={isDark} />
 
-          {/* Weekly breakdown — last 4 weeks */}
           {weeklyPts.length >= 2 && (
             <div style={{ marginTop: lg ? '14px' : '8px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
               {weeklyPts.slice(-4).map((wp, i) => {
                 const isLast = i === Math.min(weeklyPts.length, 4) - 1
                 return (
                   <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', opacity: isLast ? 1 : 0.55 + i * 0.15 }}>
-                    <span style={{ fontSize: lg ? '12px' : '10px', color: 'rgba(255,255,255,0.35)', fontFamily: 'JetBrains Mono, monospace' }}>{wp.label}</span>
+                    <span style={{ fontSize: lg ? '12px' : '10px', color: t.textMuted, fontFamily: 'JetBrains Mono, monospace' }}>{wp.label}</span>
                     <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                      <span style={{ fontSize: lg ? '12px' : '10.5px', color: '#60a5fa', fontFamily: 'JetBrains Mono, monospace', fontWeight: isLast ? 700 : 400 }}>{wp.focus.toFixed(1)}<span style={{ color: 'rgba(255,255,255,0.2)', fontSize: '9px' }}>/5</span></span>
-                      <span style={{ fontSize: lg ? '12px' : '10.5px', color: '#f59e0b', fontFamily: 'JetBrains Mono, monospace' }}>{wp.distractions.toFixed(0)}<span style={{ color: 'rgba(255,255,255,0.2)', fontSize: '9px' }}>x</span></span>
-                      <span style={{ fontSize: lg ? '12px' : '10.5px', color: '#34d399', fontFamily: 'JetBrains Mono, monospace' }}>{wp.goalRate.toFixed(0)}<span style={{ color: 'rgba(255,255,255,0.2)', fontSize: '9px' }}>%</span></span>
+                      <span style={{ fontSize: lg ? '12px' : '10.5px', color: '#60a5fa', fontFamily: 'JetBrains Mono, monospace', fontWeight: isLast ? 700 : 400 }}>{wp.focus.toFixed(1)}<span style={{ color: t.textFaint, fontSize: '9px' }}>/5</span></span>
+                      <span style={{ fontSize: lg ? '12px' : '10.5px', color: '#f59e0b', fontFamily: 'JetBrains Mono, monospace' }}>{wp.distractions.toFixed(0)}<span style={{ color: t.textFaint, fontSize: '9px' }}>x</span></span>
+                      <span style={{ fontSize: lg ? '12px' : '10.5px', color: '#34d399', fontFamily: 'JetBrains Mono, monospace' }}>{wp.goalRate.toFixed(0)}<span style={{ color: t.textFaint, fontSize: '9px' }}>%</span></span>
                     </div>
                   </div>
                 )
@@ -503,8 +526,8 @@ export default function ProgressSummary({ sessions, loading = false, size = 'nor
         <div
           onClick={() => setExpanded(e => e === 'baseline' ? null : 'baseline')}
           style={{
-            background: 'rgba(255,255,255,0.02)',
-            border: `1px solid ${expanded === 'baseline' ? 'rgba(99,102,241,0.4)' : 'rgba(255,255,255,0.06)'}`,
+            background: t.headerBg,
+            border: `1px solid ${expanded === 'baseline' ? 'rgba(99,102,241,0.4)' : t.borderCard}`,
             borderLeft: `4px solid #6366f1`,
             borderRadius: lg ? '16px' : '12px',
             padding: lg ? '20px 24px' : '12px 16px',
@@ -513,12 +536,12 @@ export default function ProgressSummary({ sessions, loading = false, size = 'nor
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: lg ? '16px' : '10px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
               <span style={{ fontSize: lg ? '16px' : '13px' }}>🧮</span>
-              <span style={{ fontSize: lg ? '14px' : '11.5px', fontWeight: 700, color: 'rgba(255,255,255,0.75)' }}>Baseline cá nhân của bạn</span>
-              <span style={{ fontSize: lg ? '11px' : '9.5px', color: 'rgba(255,255,255,0.3)', background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: '6px', padding: '2px 8px' }}>
+              <span style={{ fontSize: lg ? '14px' : '11.5px', fontWeight: 700, color: t.textPrimary }}>{`Baseline cá nhân của bạn`}</span>
+              <span style={{ fontSize: lg ? '11px' : '9.5px', color: t.textMuted, background: 'rgba(99,102,241,0.10)', border: '1px solid rgba(99,102,241,0.20)', borderRadius: '6px', padding: '2px 8px' }}>
                 Tính từ {baseline.sampleSize} phiên
               </span>
             </div>
-            <span style={{ fontSize: '10px', color: expanded === 'baseline' ? '#818cf8' : 'rgba(255,255,255,0.2)', display: 'inline-block', transform: expanded === 'baseline' ? 'rotate(180deg)' : 'none', transition: 'all 0.2s' }}>▼</span>
+            <span style={{ fontSize: '10px', color: expanded === 'baseline' ? '#818cf8' : t.expandArrow, display: 'inline-block', transform: expanded === 'baseline' ? 'rotate(180deg)' : 'none', transition: 'all 0.2s' }}>▼</span>
           </div>
 
           {/* Baseline metrics grid */}
@@ -530,9 +553,9 @@ export default function ProgressSummary({ sessions, loading = false, size = 'nor
               { label: 'Tỉ lệ đạt mục tiêu', val: baseline.goalRate.toFixed(0), sub: '%', color: '#a78bfa' },
             ].map(({ label, val, sub, color }) => (
               <div key={label} style={{ padding: lg ? '14px 16px' : '10px 12px', background: `${color}0a`, border: `1px solid ${color}20`, borderRadius: '10px' }}>
-                <div style={{ fontSize: lg ? '11px' : '9.5px', color: 'rgba(255,255,255,0.35)', marginBottom: '6px', fontWeight: 600 }}>{label}</div>
+                <div style={{ fontSize: lg ? '11px' : '9.5px', color: t.textMuted, marginBottom: '6px', fontWeight: 600 }}>{label}</div>
                 <div style={{ fontSize: lg ? '26px' : '18px', fontWeight: 800, color, fontFamily: 'JetBrains Mono, monospace', lineHeight: 1 }}>
-                  {val}<span style={{ fontSize: lg ? '13px' : '11px', fontWeight: 400, color: 'rgba(255,255,255,0.3)' }}>{sub}</span>
+                  {val}<span style={{ fontSize: lg ? '13px' : '11px', fontWeight: 400, color: t.textFaint }}>{sub}</span>
                 </div>
               </div>
             ))}
@@ -540,20 +563,20 @@ export default function ProgressSummary({ sessions, loading = false, size = 'nor
 
           {/* Expanded detail */}
           {expanded === 'baseline' && (
-            <div style={{ marginTop: lg ? '16px' : '12px', paddingTop: lg ? '16px' : '12px', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-              <p style={{ margin: '0 0 12px', fontSize: lg ? '13px' : '11.5px', color: 'rgba(255,255,255,0.58)', lineHeight: 1.7 }}>
+            <div style={{ marginTop: lg ? '16px' : '12px', paddingTop: lg ? '16px' : '12px', borderTop: `1px solid ${t.borderExpand}` }}>
+              <p style={{ margin: '0 0 12px', fontSize: lg ? '13px' : '11.5px', color: t.textSecondary, lineHeight: 1.7 }}>
                 Baseline được tính từ <strong style={{ color: '#a5b4fc' }}>{baseline.sampleSize} phiên lịch sử</strong>, loại trừ 3 phiên gần nhất để tránh bị ảnh hưởng bởi biến động nhất thời. Hệ thống dùng baseline này để phân biệt <em>"khác bình thường của chính bạn"</em> với <em>"suy giảm thực sự"</em>.
               </p>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                <div style={{ padding: lg ? '12px 14px' : '8px 10px', background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.12)', borderRadius: '9px' }}>
-                  <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.3)', marginBottom: '4px' }}>Độ lệch chuẩn Focus (σ)</div>
+                <div style={{ padding: lg ? '12px 14px' : '8px 10px', background: t.stdBg, border: `1px solid ${t.stdBorder}`, borderRadius: '9px' }}>
+                  <div style={{ fontSize: '10px', color: t.textMuted, marginBottom: '4px' }}>Độ lệch chuẩn Focus (σ)</div>
                   <div style={{ fontSize: lg ? '18px' : '14px', fontWeight: 700, color: '#60a5fa', fontFamily: 'JetBrains Mono, monospace' }}>±{baseline.stdFocus.toFixed(2)}</div>
-                  <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.25)', marginTop: '3px' }}>Ngưỡng ngoại lệ: &lt;{(baseline.focus - baseline.stdFocus * 1.5).toFixed(1)}</div>
+                  <div style={{ fontSize: '10px', color: t.textFaint, marginTop: '3px' }}>Ngưỡng ngoại lệ: &lt;{(baseline.focus - baseline.stdFocus * 1.5).toFixed(1)}</div>
                 </div>
-                <div style={{ padding: lg ? '12px 14px' : '8px 10px', background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.12)', borderRadius: '9px' }}>
-                  <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.3)', marginBottom: '4px' }}>Ngưỡng nâng cảnh báo</div>
+                <div style={{ padding: lg ? '12px 14px' : '8px 10px', background: t.stdBg, border: `1px solid ${t.stdBorder}`, borderRadius: '9px' }}>
+                  <div style={{ fontSize: '10px', color: t.textMuted, marginBottom: '4px' }}>Ngưỡng nâng cảnh báo</div>
                   <div style={{ fontSize: lg ? '18px' : '14px', fontWeight: 700, color: '#f87171', fontFamily: 'JetBrains Mono, monospace' }}>3 phiên</div>
-                  <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.25)', marginTop: '3px' }}>Tín hiệu tiêu cực liên tiếp</div>
+                  <div style={{ fontSize: '10px', color: t.textFaint, marginTop: '3px' }}>Tín hiệu tiêu cực liên tiếp</div>
                 </div>
               </div>
             </div>

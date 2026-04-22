@@ -40,7 +40,7 @@ function getModelMeta(analyzedBy?: string) {
 }
 
 // ─── Tính Mức độ tin cậy từ số phiên lịch sử ─────────────────────────────────
-// Trường confidence_score (0–100) và session_count được tính frontend từ dữ liệu report
+// confidence_score (0–100) và session_count được tính server-side và trả về cùng report
 interface ConfidenceInfo {
   score: number         // 0–100
   label: string
@@ -48,41 +48,51 @@ interface ConfidenceInfo {
   colorDark: string
   bar: string           // gradient
   note: string
-  sessionCount: number  // số phiên AI đã có context
+  contextWindow: number // số phiên AI dùng làm context (tối đa 7)
+  totalSessions: number // tổng số phiên của user
 }
 
 function calcConfidence(report: AnalysisReport): ConfidenceInfo {
-  // Ưu tiên dùng confidence_score nếu AI trả về, nếu không tính từ session_count
+  // session_count = số phiên lịch sử mà AI có context (tối đa 7, từ server)
+  // confidence_score = điểm tin cậy 0–100 tính từ server (getExceptionMeta)
+  // total_sessions = tổng phiên của user (từ server, phục vụ hiển thị)
+  const contextWindow = report.session_count ?? 0
+  const totalSessions = report.total_sessions ?? (contextWindow + 1)
   const sc = report.confidence_score
-  const n  = report.session_count ?? 0
 
-  // Tính điểm cơ bản từ số phiên
-  let base = sc != null ? sc : Math.min(30 + n * 10, 90)
-
-  // Giới hạn tối đa khi ít dữ liệu
-  if (n === 0) base = Math.min(base, 40)
-  if (n <= 2)  base = Math.min(base, 60)
-  if (n <= 4)  base = Math.min(base, 78)
+  // Nếu server trả về confidence_score, dùng trực tiếp
+  // Nếu không, tính từ context window
+  let base: number
+  if (sc != null) {
+    base = sc
+  } else {
+    base = contextWindow === 0 ? 30 : Math.min(30 + contextWindow * 7, 90)
+    if (contextWindow <= 2) base = Math.min(base, 45)
+    else if (contextWindow <= 4) base = Math.min(base, 65)
+    else if (contextWindow <= 6) base = Math.min(base, 78)
+  }
 
   const score = Math.round(base)
 
   if (score >= 75) return {
-    score, sessionCount: n,
+    score, contextWindow, totalSessions,
     label: 'Cao', color: '#059669', colorDark: '#34d399',
     bar: 'linear-gradient(90deg,#059669,#34d399)',
-    note: `Đủ lịch sử (${n} phiên) — đánh giá có độ tin cậy tốt`,
+    note: `AI phân tích với ${contextWindow} phiên gần nhất — đánh giá có độ tin cậy tốt`,
   }
   if (score >= 50) return {
-    score, sessionCount: n,
+    score, contextWindow, totalSessions,
     label: 'Trung bình', color: '#b45309', colorDark: '#fbbf24',
     bar: 'linear-gradient(90deg,#b45309,#fbbf24)',
-    note: `${n} phiên lịch sử — thêm dữ liệu để tăng độ chính xác`,
+    note: `${contextWindow} phiên trong cửa sổ phân tích — thêm dữ liệu để tăng độ chính xác`,
   }
   return {
-    score, sessionCount: n,
+    score, contextWindow, totalSessions,
     label: 'Thấp', color: '#dc2626', colorDark: '#f87171',
     bar: 'linear-gradient(90deg,#dc2626,#f87171)',
-    note: n === 0 ? 'Phiên đầu tiên — chưa có lịch sử tham chiếu' : `Chỉ ${n} phiên — cần ít nhất 5–7 phiên để phân tích ổn định`,
+    note: contextWindow === 0
+      ? 'Phiên đầu tiên — chưa có lịch sử tham chiếu'
+      : `Chỉ ${contextWindow} phiên lịch sử — cần ít nhất 7 phiên để phân tích xu hướng ổn định`,
   }
 }
 
@@ -94,24 +104,39 @@ interface ApplyCondition {
 }
 
 function calcConditions(report: AnalysisReport): ApplyCondition[] {
-  const sc = report.session_count ?? 0
+  // session_count = số phiên AI có context (max 7 từ cửa sổ phân tích)
+  // total_sessions = tổng số phiên của user
+  const contextWindow = report.session_count ?? 0
+  const totalSessions = report.total_sessions ?? (contextWindow + 1)
   const isExc = report.is_outlier ?? false
+
+  // Điều kiện 1: Đủ lịch sử ngắn hạn (AI context ≥ 3 phiên)
+  // Điều kiện 2: Đủ lịch sử dài hạn (tổng ≥ 7, có thể tính baseline)
+  // Điều kiện 3: Phiên không phải ngoại lệ
+  const hasShortHistory = contextWindow >= 3
+  const hasLongHistory  = totalSessions >= 7
 
   return [
     {
-      met: sc >= 3,
-      label: 'Đủ lịch sử ngắn hạn',
-      desc: sc >= 3 ? `${sc} phiên gần đây` : `Chỉ ${sc} phiên — cần ≥3`,
+      met: hasShortHistory,
+      label: 'Đủ lịch sử ngắn hạn (≥3 phiên)',
+      desc: hasShortHistory
+        ? `AI có ${contextWindow} phiên gần nhất làm context phân tích`
+        : `Chỉ ${contextWindow} phiên — cần ≥3 phiên để phân tích xu hướng ngắn hạn`,
     },
     {
-      met: sc >= 7,
-      label: 'Đủ lịch sử dài hạn',
-      desc: sc >= 7 ? `${sc} phiên — phân tích xu hướng ổn định` : `Cần ≥7 phiên để hiểu xu hướng dài hạn`,
+      met: hasLongHistory,
+      label: 'Đủ lịch sử dài hạn (≥7 phiên)',
+      desc: hasLongHistory
+        ? `Tổng ${totalSessions} phiên — đủ để tính baseline cá nhân và xu hướng dài hạn`
+        : `Tổng ${totalSessions} phiên — cần ≥7 phiên để xây dựng baseline cá nhân`,
     },
     {
       met: !isExc,
-      label: 'Không phải phiên ngoại lệ',
-      desc: isExc ? 'Phiên này lệch mạnh so với baseline — đánh giá có thể bị ảnh hưởng' : 'Phiên học nằm trong biên độ bình thường',
+      label: 'Phiên không phải ngoại lệ',
+      desc: isExc
+        ? 'Phiên này lệch mạnh so với baseline cá nhân — cảnh báo sẽ KHÔNG được nâng mức dựa trên 1 phiên đơn lẻ'
+        : 'Chỉ số phiên này nằm trong biên độ bình thường của lịch sử bạn',
     },
   ]
 }
@@ -352,6 +377,17 @@ export default function AnalysisReportComponent({ report, loading, isDark = true
           {/* Progress bar */}
           <div style={{ height: '6px', borderRadius: '3px', background: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.09)', overflow: 'hidden' }}>
             <div style={{ height: '100%', width: `${conf.score}%`, borderRadius: '3px', background: conf.bar, transition: 'width 0.6s ease' }} />
+          </div>
+          {/* Session context info */}
+          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '3px 9px', background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)', border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)', borderRadius: '8px' }}>
+              <span style={{ fontSize: '10px', color: textSecondary }}>🔍 Context AI</span>
+              <span style={{ fontSize: '11px', fontWeight: 700, color: isDark ? conf.colorDark : conf.color, fontFamily: 'JetBrains Mono, monospace' }}>{conf.contextWindow} phiên</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '3px 9px', background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)', border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)', borderRadius: '8px' }}>
+              <span style={{ fontSize: '10px', color: textSecondary }}>📚 Tổng lịch sử</span>
+              <span style={{ fontSize: '11px', fontWeight: 700, color: textPrimary, fontFamily: 'JetBrains Mono, monospace' }}>{conf.totalSessions} phiên</span>
+            </div>
           </div>
           {/* Note */}
           <p style={{ color: textSecondary, fontSize: '12px', margin: 0, lineHeight: 1.55, fontFamily: 'Space Grotesk, sans-serif' }}>

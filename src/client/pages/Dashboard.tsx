@@ -236,6 +236,7 @@ export default function Dashboard({ user, authFetch, onLogout, onNavigate, curre
           session_count:         typeof a.session_count    === 'number' ? a.session_count    : undefined,
           confidence_score:      typeof a.confidence_score === 'number' ? a.confidence_score : undefined,
           is_outlier:            typeof a.is_outlier       === 'boolean' ? a.is_outlier      : undefined,
+          total_sessions:        typeof a.session_count    === 'number' ? (a.session_count + 1) : (entries.length + 1),
         })
         setAiStatus({
           phase:     'done',
@@ -395,6 +396,7 @@ export default function Dashboard({ user, authFetch, onLogout, onNavigate, curre
           session_count:         typeof a.session_count    === 'number' ? a.session_count    : undefined,
           confidence_score:      typeof a.confidence_score === 'number' ? a.confidence_score : undefined,
           is_outlier:            typeof a.is_outlier       === 'boolean' ? a.is_outlier      : undefined,
+          total_sessions:        typeof a.session_count    === 'number' ? (a.session_count + 1) : (entries.length + 1),
         })
         setAiStatus({
           phase:     'done',

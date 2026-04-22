@@ -43,9 +43,10 @@ export interface AnalysisReport {
   key_name?: string | null
 
   // Exception-handling metadata (from server, not in DB)
-  session_count?: number
-  confidence_score?: number
-  is_outlier?: boolean
+  session_count?: number       // số phiên AI có context (tối đa 7)
+  confidence_score?: number    // điểm tin cậy 0–100
+  is_outlier?: boolean         // phiên này có phải ngoại lệ không
+  total_sessions?: number      // tổng số phiên của user
 
   // Meta
   created_at: string

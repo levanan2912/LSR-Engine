@@ -803,7 +803,7 @@ export default function HistoryPage({ user, authFetch, onLogout, onNavigate, cur
                   </p>
                 </div>
               </div>
-              <ProgressSummary sessions={progressSessions} loading={loading} size="large" />
+              <ProgressSummary sessions={progressSessions} loading={loading} size="large" isDark={isDark} />
             </div>
 
             {/* ══ Stats bar ══ */}

@@ -988,6 +988,7 @@ function LongTermSummary({ points, historyPoints }: { points: ChartPoint[]; hist
 type TabMode = 'charts' | 'summary' | 'science'
 
 export default function ResultSlide({ report, analyzing, entries, onClose, theme = 'dark', authFetch }: Props) {
+  const isDark = theme === 'dark'
   const [visible,        setVisible]       = useState(false)
   const [viewMode,       setViewMode]      = useState<ViewMode>('session')
   const [tabMode,        setTabMode]       = useState<TabMode>('charts')
@@ -1200,7 +1201,7 @@ export default function ResultSlide({ report, analyzing, entries, onClose, theme
                 <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.045)' }} />
               </div>
 
-              <AnalysisReportComponent report={report} loading={analyzing} />
+              <AnalysisReportComponent report={report} loading={analyzing} isDark={isDark} />
             </>
           )}
 
