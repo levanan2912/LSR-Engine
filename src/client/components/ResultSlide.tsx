@@ -486,28 +486,47 @@ function LineChart({
 }
 
 // ─── Risk Timeline Chart ────────────────────────────────────────────────────────
+// Màu & nhãn cho từng trạng thái (kể cả "chưa phân tích")
+const RISK_CFG = {
+  'Stable':      { color: '#34d399', border: '#34d39966', label: 'Ổn định',        dot: '●' },
+  'Fluctuating': { color: '#fbbf24', border: '#fbbf2466', label: 'Dao động',       dot: '◐' },
+  'High Risk':   { color: '#f87171', border: '#f8717166', label: 'Rủi ro cao',     dot: '▲' },
+  '':            { color: '#475569', border: '#47556944', label: 'Chưa phân tích', dot: '○' },
+}
+
 function RiskTimeline({ points, animDelay = 0, onClick, expanded }: {
   points: ChartPoint[], animDelay?: number, onClick?: () => void, expanded?: boolean
 }) {
   const [animated, setAnimated] = useState(false)
   useEffect(() => { const t = setTimeout(() => setAnimated(true), animDelay + 80); return () => clearTimeout(t) }, [animDelay])
 
-  const insight = useMemo(() => {
-    if (!points.length) return 'Chưa đủ dữ liệu.'
-    const n = points.length
-    const high = points.filter(p => p.riskLevel === 'High Risk').length
+  const stats = useMemo(() => {
+    const high   = points.filter(p => p.riskLevel === 'High Risk').length
     const stable = points.filter(p => p.riskLevel === 'Stable').length
-    const fluct = n - high - stable
+    const fluct  = points.filter(p => p.riskLevel === 'Fluctuating').length
+    const none   = points.filter(p => p.riskLevel === '').length
     let maxRun = 0, cur = 0
     points.forEach(p => { if (p.riskLevel === 'High Risk') { cur++; maxRun = Math.max(maxRun, cur) } else cur = 0 })
-    let txt = `**${stable}** ổn định · **${fluct}** dao động · **${high}** rủi ro cao (${n} giai đoạn). `
-    if (maxRun >= 2) txt += `⚠️ ${maxRun} giai đoạn rủi ro cao liên tiếp — cần can thiệp ngay. `
-    if (high === 0) txt += '✅ Không có giai đoạn rủi ro cao — học tập trong tầm kiểm soát.'
-    else if (stable > fluct + high) txt += 'Xu hướng chung ổn định, chú ý không để dao động kéo dài.'
-    return txt
+    return { high, stable, fluct, none, total: points.length, maxRun }
   }, [points])
 
-  const hasData = points.some(p => p.riskLevel !== '')
+  const insightText = useMemo(() => {
+    if (!points.length) return 'Chưa có dữ liệu.'
+    const { high, stable, fluct, none, total, maxRun } = stats
+    const analyzed = total - none
+    let txt = ''
+    if (analyzed === 0) return `${total} phiên chưa có báo cáo AI — phân tích để xem trạng thái rủi ro.`
+    const parts: string[] = []
+    if (stable)  parts.push(`**${stable}** ổn định`)
+    if (fluct)   parts.push(`**${fluct}** dao động`)
+    if (high)    parts.push(`**${high}** rủi ro cao`)
+    if (none)    parts.push(`**${none}** chưa phân tích`)
+    txt = parts.join(' · ') + ` (${total} phiên). `
+    if (maxRun >= 2) txt += `⚠️ ${maxRun} phiên rủi ro cao liên tiếp — cần can thiệp ngay. `
+    else if (high === 0 && analyzed > 0) txt += '✅ Không có giai đoạn rủi ro cao — học tập trong tầm kiểm soát.'
+    else if (stable > fluct + high && analyzed > 0) txt += 'Xu hướng chung ổn định, duy trì phong độ hiện tại.'
+    return txt.trim()
+  }, [points, stats])
 
   return (
     <div onClick={onClick} className="rs-risk-card" style={{
@@ -518,6 +537,8 @@ function RiskTimeline({ points, animDelay = 0, onClick, expanded }: {
       cursor: 'pointer', transition: 'all 0.22s ease',
       boxShadow: expanded ? '0 0 28px rgba(129,140,248,0.12), 0 6px 28px rgba(0,0,0,0.35)' : '0 2px 10px rgba(0,0,0,0.18)',
     }}>
+
+      {/* ── Header ── */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
           <span style={{ fontSize: '14px' }}>🗂️</span>
@@ -526,54 +547,119 @@ function RiskTimeline({ points, animDelay = 0, onClick, expanded }: {
         <span style={{ fontSize: '9px', color: expanded ? '#818cf8' : 'rgba(255,255,255,0.2)', display: 'inline-block', transform: expanded ? 'rotate(180deg)' : 'none', transition: 'all 0.2s' }}>▼</span>
       </div>
 
-      {hasData ? (
+      {/* ── Timeline blocks ── */}
+      {points.length > 0 ? (
         <>
-          <div style={{ display: 'flex', gap: '3px', flexWrap: 'wrap', marginBottom: '10px' }}>
+          {/* Block row */}
+          <div style={{ display: 'flex', gap: '3px', marginBottom: '8px' }}>
             {points.map((p, i) => {
-              const rc = RISK_COLOR[p.riskLevel] ?? '#64748b'
+              const cfg = RISK_CFG[p.riskLevel as keyof typeof RISK_CFG] ?? RISK_CFG['']
+              const isNone = p.riskLevel === ''
               return (
-                <div key={i} title={`${p.label}: ${RISK_VI[p.riskLevel] ?? '—'}${p.annotation ? ' · ' + p.annotation : ''}`} style={{
-                  flex: '1 1 22px', height: '26px', borderRadius: '5px',
-                  background: `${rc}${animated ? 'cc' : '00'}`,
-                  border: `1px solid ${rc}44`,
-                  transition: `background 0.5s ease ${i * 35}ms`,
-                  position: 'relative', minWidth: '16px',
-                }}>
-                  {p.annotation && <div style={{ position: 'absolute', top: '-3px', right: '-3px', width: '6px', height: '6px', borderRadius: '50%', background: '#fff', border: '1.5px solid #080f26' }} />}
+                <div
+                  key={i}
+                  title={`Phiên ${p.label}: ${cfg.label}${p.annotation ? ' · ' + p.annotation : ''}`}
+                  style={{
+                    flex: '1 1 0', height: '32px', borderRadius: '6px', minWidth: '14px',
+                    background: animated
+                      ? (isNone ? 'rgba(71,85,105,0.25)' : `${cfg.color}cc`)
+                      : 'transparent',
+                    border: `1px solid ${animated ? cfg.border : 'rgba(255,255,255,0.06)'}`,
+                    borderBottom: isNone ? undefined : `3px solid ${cfg.color}`,
+                    transition: `all 0.5s ease ${i * 30}ms`,
+                    position: 'relative',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}
+                >
+                  {/* Show dot icon inside block for better clarity */}
+                  {animated && (
+                    <span style={{
+                      fontSize: isNone ? '8px' : '9px',
+                      color: isNone ? 'rgba(255,255,255,0.2)' : '#fff',
+                      fontWeight: 800, lineHeight: 1,
+                      opacity: isNone ? 0.5 : 0.85,
+                    }}>{cfg.dot}</span>
+                  )}
+                  {/* Annotation dot */}
+                  {p.annotation && (
+                    <div style={{ position: 'absolute', top: '-3px', right: '-3px', width: '7px', height: '7px', borderRadius: '50%', background: '#fff', border: '1.5px solid #080f26', zIndex: 1 }} />
+                  )}
                 </div>
               )
             })}
           </div>
-          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-            {(['Stable', 'Fluctuating', 'High Risk'] as const).map(lvl => {
+
+          {/* X-axis labels (show every Nth) */}
+          <div style={{ display: 'flex', marginBottom: '10px', paddingLeft: '0' }}>
+            {points.map((p, i) => {
+              const step = points.length > 12 ? 3 : points.length > 6 ? 2 : 1
+              const show = i % step === 0 || i === points.length - 1
+              return (
+                <div key={i} style={{ flex: '1 1 0', minWidth: '14px', textAlign: 'center' }}>
+                  {show && (
+                    <span className="rs-x-label" style={{ fontSize: '8px', color: 'rgba(255,255,255,0.25)', fontFamily: 'JetBrains Mono, monospace', display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {p.label}
+                    </span>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Legend — always show ALL 4 categories with count */}
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', padding: '8px 10px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '8px', marginBottom: '10px' }}>
+            {(['Stable', 'Fluctuating', 'High Risk', ''] as const).map(lvl => {
+              const cfg = RISK_CFG[lvl]
               const cnt = points.filter(p => p.riskLevel === lvl).length
-              if (!cnt) return null
+              const isNone = lvl === ''
               return (
-                <div key={lvl} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <div style={{ width: '9px', height: '9px', borderRadius: '2px', background: RISK_COLOR[lvl] }} />
-                  <span style={{ fontSize: '11px', color: RISK_COLOR[lvl], fontFamily: 'Space Grotesk, sans-serif', fontWeight: 600 }}>{RISK_VI[lvl]}</span>
-                  <span className="rs-risk-cnt" style={{ fontSize: '10px', color: 'rgba(255,255,255,0.3)', fontFamily: 'JetBrains Mono, monospace' }}>{cnt}</span>
+                <div key={lvl} style={{ display: 'flex', alignItems: 'center', gap: '5px', opacity: cnt === 0 ? 0.35 : 1 }}>
+                  <div style={{
+                    width: '12px', height: '12px', borderRadius: '3px',
+                    background: isNone ? 'rgba(71,85,105,0.35)' : `${cfg.color}cc`,
+                    border: `1px solid ${cfg.border}`,
+                    borderBottom: isNone ? undefined : `2px solid ${cfg.color}`,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    <span style={{ fontSize: '7px', color: isNone ? 'rgba(255,255,255,0.3)' : '#fff', fontWeight: 800 }}>{cfg.dot}</span>
+                  </div>
+                  <span style={{ fontSize: '11px', color: isNone ? 'rgba(148,163,184,0.7)' : cfg.color, fontFamily: 'Space Grotesk, sans-serif', fontWeight: 600 }}>
+                    {cfg.label}
+                  </span>
+                  <span className="rs-risk-cnt" style={{ fontSize: '10px', color: cnt > 0 ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.2)', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}>
+                    {cnt}
+                  </span>
                 </div>
               )
             })}
           </div>
+
+          {/* Summary line — always visible */}
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px', padding: '7px 10px', background: 'rgba(129,140,248,0.05)', border: '1px solid rgba(129,140,248,0.12)', borderRadius: '7px' }}>
+            <span style={{ fontSize: '12px', marginTop: '1px', flexShrink: 0 }}>
+              {stats.high > 0 ? '⚠️' : stats.fluct > stats.stable ? '📊' : '✅'}
+            </span>
+            <p className="rs-insight-text" style={{ color: 'rgba(255,255,255,0.72)', fontSize: '12px', lineHeight: 1.6, margin: 0, fontFamily: 'Space Grotesk, sans-serif' }}>
+              {insightText.split('**').map((seg, i) =>
+                i % 2 === 1
+                  ? <strong key={i} style={{ color: '#a5b4fc', fontWeight: 700 }}>{seg}</strong>
+                  : <React.Fragment key={i}>{seg}</React.Fragment>
+              )}
+            </p>
+          </div>
+
+          {/* Expanded detail */}
+          {expanded && stats.none > 0 && (
+            <div style={{ marginTop: '10px', padding: '9px 12px', background: 'rgba(71,85,105,0.12)', border: '1px solid rgba(71,85,105,0.25)', borderRadius: '8px', animation: 'insightIn 0.22s ease both' }}>
+              <p className="rs-insight-text" style={{ color: 'rgba(148,163,184,0.85)', fontSize: '11.5px', lineHeight: 1.6, margin: 0, fontFamily: 'Space Grotesk, sans-serif' }}>
+                <strong style={{ color: '#94a3b8' }}>○ Chưa phân tích ({stats.none} phiên):</strong> Những phiên này đã được ghi nhận nhưng chưa có báo cáo AI — có thể do phân tích thất bại hoặc chưa chạy. Nhấn "Thử lại AI" trong trang lịch sử để phân tích bổ sung.
+              </p>
+            </div>
+          )}
         </>
       ) : (
         <div className="rs-risk-empty" style={{ padding: '12px 0', textAlign: 'center', fontSize: '12px', color: 'rgba(255,255,255,0.25)', fontFamily: 'Space Grotesk, sans-serif' }}>
-          Chưa có dữ liệu báo cáo rủi ro. Dữ liệu sẽ tích lũy sau nhiều phiên phân tích AI.
-        </div>
-      )}
-
-      {expanded && (
-        <div style={{ marginTop: '14px', padding: '12px 14px', background: 'rgba(129,140,248,0.07)', border: '1px solid rgba(129,140,248,0.18)', borderRadius: '10px', animation: 'insightIn 0.22s ease both' }}>
-          <div className="rs-insight-label" style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: '10px', fontWeight: 700, color: 'rgba(255,255,255,0.45)', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '6px' }}>💬 Diễn giải</div>
-          <p className="rs-insight-text" style={{ color: 'rgba(255,255,255,0.82)', fontSize: '12.5px', lineHeight: 1.7, margin: 0, fontFamily: 'Space Grotesk, sans-serif' }}>
-            {insight.split('**').map((seg, i) =>
-              i % 2 === 1
-                ? <strong key={i} style={{ color: '#a5b4fc', fontWeight: 700 }}>{seg}</strong>
-                : <React.Fragment key={i}>{seg}</React.Fragment>
-            )}
-          </p>
+          Chưa có dữ liệu. Dữ liệu sẽ tích lũy sau nhiều phiên phân tích AI.
         </div>
       )}
     </div>
