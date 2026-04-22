@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react'
 import { AnalysisReport, DailyEntry } from '../types'
 import AnalysisReportComponent from './AnalysisReport'
+import ProgressSummary, { SessionRecord } from './ProgressSummary'
 
 interface Props {
   report: AnalysisReport | null
@@ -632,20 +633,23 @@ function RiskBanner({ report }: { report: AnalysisReport | null }) {
 
 // ─── Main Component ─────────────────────────────────────────────────────────────
 export default function ResultSlide({ report, analyzing, entries, onClose, theme = 'dark', authFetch }: Props) {
-  const [visible,     setVisible]     = useState(false)
-  const [viewMode,    setViewMode]    = useState<ViewMode>('session')
-  const [expandedIdx, setExpandedIdx] = useState<number | null>(null)
+  const [visible,       setVisible]       = useState(false)
+  const [viewMode,      setViewMode]      = useState<ViewMode>('session')
+  const [expandedIdx,   setExpandedIdx]   = useState<number | null>(null)
   const [historyEntries, setHistoryEntries] = useState<DailyEntry[]>([])
+  const [fullHistory,   setFullHistory]   = useState<SessionRecord[]>([])
+  const [historyLoading, setHistoryLoading] = useState(false)
 
   useEffect(() => { const t = setTimeout(() => setVisible(true), 30); return () => clearTimeout(t) }, [])
   useEffect(() => { document.body.style.overflow = 'hidden'; return () => { document.body.style.overflow = '' } }, [])
 
-  // Fetch more history for week/month views
+  // Fetch full history (with report data) for charts + ProgressSummary
   useEffect(() => {
-    if (!authFetch || historyEntries.length > 0) return
-    authFetch('/api/entries/history?limit=90').then(r => r.ok ? r.json() : null).then(data => {
+    if (!authFetch || fullHistory.length > 0) return
+    setHistoryLoading(true)
+    authFetch('/api/entries/history?limit=120').then(r => r.ok ? r.json() : null).then(data => {
       if (data?.sessions) {
-        // history returns sessions; convert to DailyEntry shape
+        // Convert for chart use (DailyEntry shape)
         const converted: DailyEntry[] = data.sessions.map((s: any) => ({
           id: s.id, user_id: 0,
           session_date: s.session_date, session_number: s.session_number,
@@ -656,8 +660,22 @@ export default function ResultSlide({ report, analyzing, entries, onClose, theme
           dropout_feeling: s.dropout_feeling, created_at: s.created_at ?? '',
         }))
         setHistoryEntries(converted)
+        // Full history with report data for ProgressSummary
+        const full: SessionRecord[] = data.sessions.map((s: any) => ({
+          id: s.id,
+          session_date: s.session_date,
+          session_number: s.session_number ?? 1,
+          study_hours: Number(s.study_hours ?? 0),
+          focus_level: s.focus_level ?? 3,
+          distraction_count: s.distraction_count ?? 0,
+          goal_achieved: s.goal_achieved ?? 0,
+          dropout_feeling: s.dropout_feeling ?? 3,
+          emotional_state: s.emotional_state ?? null,
+          report: s.report ? { risk_level: s.report.risk_level } : null,
+        }))
+        setFullHistory(full)
       }
-    }).catch(() => {})
+    }).catch(() => {}).finally(() => setHistoryLoading(false))
   }, [authFetch])
 
   const points = useMemo(() => buildPoints(entries, viewMode, historyEntries), [entries, viewMode, historyEntries])
@@ -824,6 +842,32 @@ export default function ResultSlide({ report, analyzing, entries, onClose, theme
           </div>
 
           <AnalysisReportComponent report={report} loading={analyzing} />
+
+          {/* ── Progress Summary divider ── */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: '26px 0 18px' }}>
+            <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.045)' }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '5px 13px', background: 'rgba(99,102,241,0.07)', border: '1px solid rgba(99,102,241,0.15)', borderRadius: '18px' }}>
+              <span style={{ fontSize: '11px' }}>📊</span>
+              <span style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: '10.5px', fontWeight: 600, color: '#a5b4fc' }}>Tiến trình học tập</span>
+            </div>
+            <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.045)' }} />
+          </div>
+
+          <ProgressSummary
+            sessions={fullHistory.length > 0 ? fullHistory : entries.map(e => ({
+              id: e.id ?? 0,
+              session_date: e.session_date,
+              session_number: e.session_number ?? 1,
+              study_hours: Number(e.study_hours ?? 0),
+              focus_level: e.focus_level ?? 3,
+              distraction_count: e.distraction_count ?? 0,
+              goal_achieved: e.goal_achieved ? 1 : 0,
+              dropout_feeling: e.dropout_feeling ?? 3,
+              emotional_state: e.emotional_state ?? null,
+              report: null,
+            }))}
+            loading={historyLoading}
+          />
 
           <div style={{ marginTop: '26px', display: 'flex', justifyContent: 'center' }}>
             <button onClick={onClose} style={{
