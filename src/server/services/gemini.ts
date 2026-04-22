@@ -34,144 +34,67 @@ export interface EntryInput {
 
 type HistoryRow = Record<string, unknown>
 
-// ─── ANALYTICAL_RULES — Bộ quy tắc v11 (Signal-Driven, Compact Output) ────────
+// ─── ANALYTICAL_RULES — Bộ quy tắc v12 (Compact, Token-Efficient) ─────────────
 
-export const ANALYTICAL_RULES = `
-===== VAI TRÒ =====
-Bạn là hệ thống phân tích hành vi học tập. Xây dựng chuỗi suy luận khép kín — mỗi phần output phải xuất phát trực tiếp từ dữ liệu tín hiệu đã xác định ở phần trước.
+export const ANALYTICAL_RULES = `Bạn là hệ thống phân tích hành vi học tập. Trả về DUY NHẤT một JSON object hợp lệ (không markdown, không text ngoài JSON) với đúng 6 fields:
+- risk_level: "Stable"|"Fluctuating"|"High Risk" (Stable=ổn định; Fluctuating=≥1 chỉ số dao động >1 bậc; High Risk=tập trung<3 VÀ (bỏ cuộc≥4 HOẶC không đạt mục tiêu))
+- key_signals: mảng 2–3 string, mỗi cái ≤25 từ, có số cụ thể (vd: "Tập trung 2/5, giảm từ 4/5 (1 phiên trước)"), chỉ mô tả hành vi đo được
+- primary_risk_driver: string ≤20 từ — tín hiệu chủ đạo từ key_signals
+- intervention_strategy: string ≤35 từ, bắt đầu "Để xử lý [driver]...", 1 hướng cụ thể
+- short_term_forecast: string ≤50 từ, cấu trúc "Nếu... có khả năng..."
+- action_plan_48h: mảng đúng 3 string ≤20 từ/cái (can thiệp / môi trường / đo lại)
+Cấm: từ tuyệt đối, nhãn tâm lý, "phiên -N" (dùng "N phiên trước"). Ngôn ngữ: tiếng Việt (trừ risk_level).`
 
-===== PIPELINE 4 BƯỚC =====
-
-BƯỚC 1 — TÍN HIỆU (key_signals): 2–3 quan sát
-  - Kết hợp ít nhất 2 chỉ số, hoặc 1 chỉ số với xu hướng lịch sử
-  - Phải có con số cụ thể: "Tập trung 2/5, giảm từ 4/5 (1 phiên trước)"
-  - Chỉ mô tả sự kiện, không đánh giá (tốt/xấu/đáng lo...)
-  - Nếu có yếu tố gây mất tập trung: bắt buộc xuất hiện trong ≥1 tín hiệu
-  - MỖI tín hiệu tối đa 25 từ
-
-BƯỚC 2 — CHIẾN LƯỢC (intervention_strategy): 1 câu duy nhất
-  - Bắt đầu: "Để xử lý [tín hiệu chủ đạo từ Bước 1]..."
-  - Chỉ 1 hướng tiếp cận, nêu cơ chế tác động cụ thể
-  - Tối đa 35 từ, không dùng từ chung chung (cải thiện, nâng cao...)
-
-BƯỚC 3 — DỰ BÁO (short_term_forecast): 1–2 câu
-  - Câu 1: "Nếu [driver] không thay đổi, [tín hiệu X] có khả năng [hệ quả]."
-  - Câu 2 (tuỳ chọn): "Nếu [hành động từ Bước 2] được thực hiện, [chỉ số] có khả năng đạt [mức]."
-  - Tối đa 50 từ tổng cộng
-
-BƯỚC 4 — HÀNH ĐỘNG (action_plan_48h): đúng 3 mục
-  - Mục 1: Can thiệp trực tiếp vào driver (ai, làm gì, khi nào, bao lâu)
-  - Mục 2: Kiểm soát môi trường liên quan tín hiệu cụ thể ở Bước 1
-  - Mục 3: Đo lại — chỉ số nào cần đạt bao nhiêu ở phiên tiếp theo
-  - Mỗi mục tối đa 20 từ, không trùng nội dung nhau
-
-===== QUY TẮC CỨNG =====
-- Không thêm lời khuyên chung không xuất phát từ dữ liệu
-- Không gán nhãn tâm lý (lo lắng, mất động lực...), chỉ mô tả hành vi đo được
-- Không dùng từ tuyệt đối (chắc chắn, sẽ xảy ra, không thể...)
-- NGHIÊM CẤM "phiên -1", "phiên -N" — PHẢI dùng "1 phiên trước", "2 phiên trước"
-
-===== PHÂN LOẠI RỦI RO =====
-- Stable    : Tập trung ổn định, muốn bỏ cuộc thấp, đạt mục tiêu
-- Fluctuating: ≥1 chỉ số dao động >1 bậc giữa các phiên
-- High Risk : Tập trung <3 VÀ (bỏ cuộc ≥4 HOẶC không đạt mục tiêu)
-
-===== OUTPUT =====
-Trả về DUY NHẤT một JSON hợp lệ, đúng 6 fields:
-  risk_level          : "Stable" | "Fluctuating" | "High Risk"
-  key_signals         : array of 2–3 strings (Bước 1)
-  intervention_strategy: string (Bước 2)
-  short_term_forecast : string (Bước 3)
-  action_plan_48h     : array of exactly 3 strings (Bước 4)
-  primary_risk_driver : string — tín hiệu chủ đạo được dùng ở Bước 2 (1 câu)
-Không markdown. Không text ngoài JSON.
-
-===== NGÔN NGỮ =====
-Toàn bộ text PHẢI bằng tiếng Việt, trừ risk_level (giữ nguyên EN vì là key hệ thống).
-Phong cách: súc tích, phân tích, bám dữ liệu — không văn hoa, không rào đón.
-`
-
-// ─── formatAnalysisData — session-based prompt (v7) ──────────────────────────
+// ─── formatAnalysisData — session-based prompt (v8, token-optimized) ─────────
 // INPUT:  historyData thô từ DB (DESC — mới nhất trước).
-//         Hàm tự reverse để tạo timeline cũ → mới (ASC), giữ tối đa 7 phiên.
-//         3 phiên gần nhất được hiển thị riêng để AI ưu tiên phân tích xu hướng.
+//         Slice tối đa 5 phiên (đủ context, giảm token so với v7 dùng 7 phiên).
+//         Output ngắn gọn dạng bảng thay vì bullet dài.
 
 export function formatAnalysisData(todayData: EntryInput, historyData: HistoryRow[]): string {
-  // allSessions: ASC (cũ → mới), tối đa 7 phiên lịch sử
-  const allSessions = historyData.slice(0, 7).reverse()
+  // allSessions: ASC (cũ → mới), tối đa 5 phiên lịch sử
+  const allSessions = historyData.slice(0, 5).reverse()
   const n           = allSessions.length
 
-  // 3 phiên gần nhất (index cuối của allSessions) — AI ưu tiên xu hướng ở đây
-  const recentThree = allSessions.slice(-3)
-
-  const distractionDensity = todayData.study_hours > 0
-    ? (todayData.distraction_count / todayData.study_hours).toFixed(2)
+  const dd = todayData.study_hours > 0
+    ? (todayData.distraction_count / todayData.study_hours).toFixed(1)
     : '0'
 
-  // ── Header ───────────────────────────────────────────────────────────────
-  let output = `TỔNG DỮ LIỆU: ${n + 1} phiên (${n} lịch sử + phiên hiện tại).
-DỮ LIỆU ĐÃ ĐỦ - KHÔNG YÊU CẦU THÊM DỮ LIỆU.
+  // ── Phiên hiện tại (compact) ──────────────────────────────────────────────
+  const today = todayData
+  let out = `PHIÊN HIỆN TẠI (${today.session_date} S${today.session_number ?? 1}${today.session_time ? ' ' + today.session_time : ''}):
+F=${today.focus_level}/5 H=${today.study_hours}h D=${today.distraction_count}(${dd}/h) G=${today.goal_achieved ? 'Y' : 'N'} DO=${today.dropout_feeling}/5`
 
-PHIÊN HIỆN TẠI:
-- Ngày: ${todayData.session_date} - Phiên ${todayData.session_number ?? 1} (${todayData.session_time ?? 'Không rõ giờ'})
-- Số giờ học: ${todayData.study_hours}h
-- Mức tập trung: ${todayData.focus_level}/5
-- Số lần mất tập trung: ${todayData.distraction_count} lần (mật độ: ${distractionDensity} lần/giờ)
-- Yếu tố gây mất tập trung: ${todayData.distracting_factors || 'Không ghi nhận'}
-- Đạt mục tiêu: ${todayData.goal_achieved ? 'Có' : 'Không'}
-- Mức muốn bỏ cuộc: ${todayData.dropout_feeling}/5
-- Trạng thái cảm xúc: ${todayData.emotional_state || 'Không ghi nhận'}
-`
+  if (today.distracting_factors) out += ` dist="${today.distracting_factors}"`
+  if (today.emotional_state)     out += ` emo="${today.emotional_state}"`
 
   if (n === 0) {
-    output += '\n(Đây là phiên đầu tiên, chưa có dữ liệu lịch sử.)\n'
-    return output
+    out += '\n[Phiên đầu tiên, không có lịch sử]'
+    return out
   }
 
-  // ── 3 phiên gần nhất (ưu tiên phân tích xu hướng) ────────────────────────
-  output += `\n3 PHIÊN GẦN NHẤT (ưu tiên phân tích xu hướng):\n`
-  recentThree.forEach((s, i) => {
-    const h       = Number(s.study_hours       || 0)
-    const dc      = Number(s.distraction_count || 0)
-    const density = h > 0 ? (dc / h).toFixed(2) : '0'
-    const sameDay = String(s.session_date) === todayData.session_date
-    // Format date as DD/MM for display
-    const dateStr = String(s.session_date)  // "YYYY-MM-DD"
-    const [yr, mo, dy] = dateStr.split('-')
-    const shortDate = `${dy}/${mo}`
-    const label   = sameDay
-      ? `cùng ngày S${s.session_number ?? ''}`
-      : `${shortDate} S${s.session_number ?? ''}`
-    const offset  = recentThree.length - i   // 3, 2, 1 phiên trước
-    output += `- ${label} (${offset} phiên trước): Tập trung ${s.focus_level}/5, Giờ học ${h}h, Mật độ ${density} lần/giờ, Mục tiêu ${s.goal_achieved ? 'Đạt' : 'Không đạt'}, Bỏ cuộc ${s.dropout_feeling}/5\n`
+  // ── Lịch sử (ASC, cũ → mới) — compact table ─────────────────────────────
+  // Tiêu đề: N phiên trước (offset từ phiên hiện tại)
+  out += `\n\nLỊCH SỬ (${n} phiên, cũ→mới):`
+  allSessions.forEach((s, i) => {
+    const h      = Number(s.study_hours       || 0)
+    const dc     = Number(s.distraction_count || 0)
+    const dens   = h > 0 ? (dc / h).toFixed(1) : '0'
+    const sameDay = String(s.session_date) === today.session_date
+    const dateStr = String(s.session_date)
+    const [, mo, dy] = dateStr.split('-')
+    const lbl = sameDay ? `cùng ngày S${s.session_number ?? ''}` : `${dy}/${mo} S${s.session_number ?? ''}`
+    const offset = n - i   // n, n-1, ... 1 phiên trước
+    out += `\n${offset}pt (${lbl}): F=${s.focus_level} H=${h}h D=${dc}(${dens}/h) G=${s.goal_achieved ? 'Y' : 'N'} DO=${s.dropout_feeling}`
   })
 
-  // ── Các phiên cũ hơn (tham khảo thêm) ───────────────────────────────────
-  if (n > 3) {
-    const olderSessions = allSessions.slice(0, -3)
-    output += `\nCÁC PHIÊN CŨ HƠN (${olderSessions.length} phiên, tham khảo thêm):\n`
-    olderSessions.forEach((s, i) => {
-      const dateStr = String(s.session_date)
-      const [yr2, mo2, dy2] = dateStr.split('-')
-      const shortDate2 = `${dy2}/${mo2}`
-      output += `- ${shortDate2} S${s.session_number ?? ''} (${n - i} phiên trước): Tập trung ${s.focus_level}/5, Bỏ cuộc ${s.dropout_feeling}/5\n`
-    })
-  }
+  // ── Chuỗi xu hướng (compact) ─────────────────────────────────────────────
+  const fChain  = [...allSessions.map(s => s.focus_level),    today.focus_level]
+  const doChain = [...allSessions.map(s => s.dropout_feeling), today.dropout_feeling]
 
-  // ── Chuỗi xu hướng cũ → mới (bao gồm phiên hiện tại) ────────────────────
-  const focusChain   = [...allSessions.map(s => s.focus_level),   todayData.focus_level]
-  const dropoutChain = [...allSessions.map(s => s.dropout_feeling), todayData.dropout_feeling]
+  out += `\n\nXU HƯỚNG (cũ→mới): F=${fChain.join('→')} DO=${doChain.join('→')}`
+  out += `\n(pt=phiên trước; F=tập trung/5; H=giờ; D=mất tập trung; G=mục tiêu Y/N; DO=bỏ cuộc/5)`
 
-  output += `
-CHUỖI XU HƯỚNG (từ cũ → mới, ${focusChain.length} phiên):
-- Mức tập trung: ${focusChain.join(' → ')}
-- Mức bỏ cuộc:   ${dropoutChain.join(' → ')}
-
-LƯU Ý: Ưu tiên phân tích xu hướng dựa trên 3 phiên gần nhất. Đơn vị thời gian là PHIÊN, không phải ngày.
-QUY TẮC VIẾT: Khi đề cập đến phiên lịch sử trong output, PHẢI dùng dạng "N phiên trước" (ví dụ: "1 phiên trước", "2 phiên trước", "3 phiên trước"). NGHIÊM CẤM dùng "phiên -1", "phiên -2", "phiên -N" hay bất kỳ số âm nào để chỉ phiên học.
-`
-
-  return output
+  return out
 }
 
 // ─── validateAnalysisOutput — kiểm tra vi phạm quy tắc ───────────────────────
@@ -449,7 +372,7 @@ async function callGeminiModelSafely(
 
     const generationConfig: Record<string, unknown> = {
       temperature:     0.05,
-      maxOutputTokens: 2048,
+      maxOutputTokens: 800,   // JSON output compact ~300-500 tokens — 800 là đủ, giảm latency
       topP:            0.8,
       topK:            32,
     }
@@ -660,17 +583,10 @@ export async function analyzeStudyBehavior(
 
   // ── Build prompt ──────────────────────────────────────────────────────────
   const dataInput  = formatAnalysisData(todayData, historyData)
+  // Prompt ngắn gọn — toàn bộ quy tắc đã nằm trong systemInstruction
   const fullPrompt = `${dataInput}
 
-THỰC HIỆN THEO ĐÚNG 5 BƯỚC PIPELINE:
-Bước 1 → key_signals: 2–3 tín hiệu, mỗi tín hiệu kết hợp ≥2 chỉ số có con số cụ thể.
-Bước 2 → primary_risk_driver: chọn 1 tín hiệu từ Bước 1, bắt đầu bằng "Tín hiệu...".
-Bước 3 → short_term_forecast: trích dẫn đúng tên driver và tín hiệu từ Bước 1+2.
-Bước 4 → intervention_strategy: bắt đầu bằng "Để xử lý [driver]...", 1 hướng duy nhất.
-Bước 5 → action_plan_48h: đúng 3 hành động (can thiệp / kiểm soát / đo lại), suy ra từ Bước 4.
-
-Trả về DUY NHẤT một JSON object hợp lệ, không markdown, không text ngoài JSON.
-JSON có đúng 6 fields: risk_level, key_signals (array), short_term_forecast, primary_risk_driver, intervention_strategy, action_plan_48h (array gồm đúng 3 phần tử).`
+Phân tích và trả về JSON 6 fields: risk_level, key_signals(2-3 items), primary_risk_driver, intervention_strategy, short_term_forecast, action_plan_48h(đúng 3 items).`
 
   // ── Load model definitions từ DB (nếu có), fallback về hardcoded ─────────
   let modelDefs: Array<{ name: string; timeout: number; priority: string }>
@@ -758,6 +674,13 @@ JSON có đúng 6 fields: risk_level, key_signals (array), short_term_forecast, 
 
       const key     = keyPool[keyIdx]
       const keyName = getKeyName(keyIdx)
+      // Thêm delay nhỏ giữa các lần thử key để tránh burst rate-limit
+      const attemptNo = availableKeys.indexOf(keyIdx)
+      if (attemptNo > 0) {
+        const delayMs = Math.min(attemptNo * 500, 2000)  // 500ms, 1000ms, 1500ms, 2000ms max
+        console.log(`⏸️  [${modelConfig.name}][${keyName}] Waiting ${delayMs}ms before retry...`)
+        await new Promise(r => setTimeout(r, delayMs))
+      }
       console.log(`⏳ [${modelConfig.name}][${keyName}] Calling...`)
 
       const outcome = await callGeminiModelSafely(
@@ -822,9 +745,10 @@ JSON có đúng 6 fields: risk_level, key_signals (array), short_term_forecast, 
         skipThisModel = true
 
       } else if (/503|overload|unavailable|high.?demand/i.test(msg)) {
-        // 503 = server-side overload, all keys same → skip model
-        console.log(`⚡ [${modelConfig.name}][${keyName}] 503 server overload — skip model immediately`)
-        skipThisModel = true
+        // 503 = server overload — thử key khác trước (mỗi key dùng API region khác nhau).
+        // Chỉ skip model nếu ĐÃ thử tất cả keys mà vẫn 503 (exhaustedThisModel sẽ bao hết).
+        console.log(`⚡ [${modelConfig.name}][${keyName}] 503 server overload — exhausted for THIS model, try next key`)
+        exhaustedThisModel.add(keyIdx)
 
       } else if (/TIMEOUT/i.test(msg)) {
         // Timeout: exhausted cho model này (server đang chậm), thử key khác

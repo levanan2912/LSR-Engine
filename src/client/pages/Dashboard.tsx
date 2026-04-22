@@ -68,7 +68,7 @@ function AIStatusBar({ status }: { status: AIStatus }) {
 type StatusType = 'idle' | 'loading' | 'success' | 'error' | 'warning'
 interface SubmitStatus { type: StatusType; message: string }
 
-function StatusBanner({ status }: { status: SubmitStatus }) {
+function StatusBanner({ status, onRetry, retrying }: { status: SubmitStatus; onRetry?: () => void; retrying?: boolean }) {
   if (status.type === 'idle' || !status.message) return null
   const s = {
     loading: { bg: '#2d2f6b', border: '#6366f1', color: '#c7d2fe' },
@@ -81,6 +81,26 @@ function StatusBanner({ status }: { status: SubmitStatus }) {
     <div style={{ marginTop: '12px', padding: '12px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 500, display: 'flex', alignItems: 'flex-start', gap: '8px', background: s.bg, border: `1px solid ${s.border}`, color: s.color, flexWrap: 'wrap' }}>
       {status.type === 'loading' && <div style={{ width: '13px', height: '13px', borderRadius: '50%', flexShrink: 0, marginTop: '2px', border: '2px solid rgba(99,102,241,0.4)', borderTopColor: '#818cf8', animation: 'spin 0.8s linear infinite' }} />}
       <span style={{ flex: 1, whiteSpace: 'pre-line' }}>{status.message}</span>
+      {onRetry && status.type === 'warning' && (
+        <button
+          onClick={onRetry}
+          disabled={retrying}
+          style={{
+            marginTop: '6px', padding: '6px 14px', borderRadius: '8px',
+            background: retrying ? 'rgba(251,191,36,0.1)' : 'rgba(251,191,36,0.18)',
+            border: '1px solid rgba(251,191,36,0.4)',
+            color: '#fde68a', fontSize: '12px', fontWeight: 700,
+            cursor: retrying ? 'not-allowed' : 'pointer',
+            fontFamily: 'Space Grotesk, sans-serif',
+            display: 'flex', alignItems: 'center', gap: '5px',
+            flexShrink: 0, opacity: retrying ? 0.6 : 1,
+          }}
+        >
+          {retrying
+            ? <><span style={{ display: 'inline-block', width: '10px', height: '10px', border: '1.5px solid rgba(253,230,138,0.3)', borderTopColor: '#fde68a', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} /> Đang thử...</>
+            : '🔄 Thử lại AI'}
+        </button>
+      )}
     </div>
   )
 }
@@ -162,7 +182,9 @@ export default function Dashboard({ user, authFetch, onLogout, onNavigate, curre
   const [submitStatus,  setSubmitStatus]  = useState<SubmitStatus>({ type: 'idle', message: '' })
   const [todaySessions, setTodaySessions] = useState<TodaySession[] | null>(null)
   const [sessionDate,   setSessionDate]   = useState('')
-  const [showResult,    setShowResult]    = useState(false)
+  const [showResult,       setShowResult]       = useState(false)
+  const [pendingEntryId,   setPendingEntryId]   = useState<number | null>(null)  // entry chưa có AI report
+  const [retrying,         setRetrying]         = useState(false)
   const pendingData  = useRef<EntryFormData | null>(null)
   const statusTimer  = useRef<ReturnType<typeof setTimeout> | null>(null)
   const formRef      = useRef<EntryFormRef>(null)
@@ -186,6 +208,59 @@ export default function Dashboard({ user, authFetch, onLogout, onNavigate, curre
     setSubmitStatus({ type, message })
     if (autoMs && autoMs > 0) statusTimer.current = setTimeout(() => setSubmitStatus({ type: 'idle', message: '' }), autoMs)
   }, [])
+
+  // ── retryAI: gọi lại AI cho entry đã lưu nhưng chưa có report ─────────────
+  const retryAI = useCallback(async () => {
+    if (!pendingEntryId || retrying) return
+    setRetrying(true)
+    setAiStatus({ phase: 'analyzing' })
+    showStatus('loading', '⏳ Đang thử lại phân tích AI...')
+    try {
+      const res  = await authFetch(`/api/entries/${pendingEntryId}/analysis`, { method: 'POST' })
+      const data = await res.json() as Record<string, unknown>
+      if (res.ok && data.success && data.analysis) {
+        const a = data.analysis as Record<string, unknown>
+        setReport({
+          id:                    pendingEntryId,
+          user_id:               user.id,
+          entry_id:              pendingEntryId,
+          report_date:           new Date(Date.now() + 7 * 3600000).toISOString().split('T')[0],
+          created_at:            new Date(Date.now() + 7 * 3600000).toISOString(),
+          risk_level:            String(a.risk_level            || 'Fluctuating'),
+          key_signals:           Array.isArray(a.key_signals)     ? a.key_signals as string[]     : [],
+          action_plan_48h:       Array.isArray(a.action_plan_48h) ? a.action_plan_48h as string[] : [],
+          short_term_forecast:   String(a.short_term_forecast   || ''),
+          primary_risk_driver:   String(a.primary_risk_driver   || ''),
+          intervention_strategy: String(a.intervention_strategy || ''),
+          monitoring_protocol:   String(a.monitoring_protocol   || ''),
+          raw_ai_response:       (a.raw_ai_response as string)   ?? null,
+          analyzed_by:           (a.analyzed_by as string)       ?? null,
+          key_name:              (a.key_name as string)          ?? null,
+        })
+        setAiStatus({
+          phase:     'done',
+          modelName: a.analyzed_by as string ?? undefined,
+          keyName:   a.key_name   as string ?? undefined,
+          latencyMs: typeof a.latency === 'number' ? a.latency : undefined,
+        })
+        setPendingEntryId(null)
+        showStatus('success', '✅ Phân tích AI thành công!', 5000)
+        toast.success('AI hoàn thành', 'Báo cáo phân tích đã sẵn sàng.')
+        setShowResult(true)
+        await loadData()
+      } else {
+        const msg = String(data.message || 'AI vẫn chưa phản hồi')
+        showStatus('warning', `⚠️ ${msg}\nThử đổi mạng (WiFi/4G/VPN) rồi nhấn "🔄 Thử lại AI" lần nữa.`)
+        toast.error('Thử lại thất bại', msg.slice(0, 80))
+        setAiStatus({ phase: 'ready' })
+      }
+    } catch {
+      showStatus('error', '❌ Lỗi kết nối khi thử lại AI. Kiểm tra mạng rồi thử lại.', 8000)
+      setAiStatus({ phase: 'ready' })
+    } finally {
+      setRetrying(false)
+    }
+  }, [pendingEntryId, retrying, authFetch, user.id, showStatus, toast, loadData])
 
   // ── _doSubmit: inner recursive — không gọi trực tiếp, dùng submitEntry ──────
   const _doSubmit = useCallback(async (
@@ -258,15 +333,15 @@ export default function Dashboard({ user, authFetch, onLogout, onNavigate, curre
       // ── Lỗi server / AI / timeout (5xx) — retry nếu còn lượt ────────────
       if (!res.ok) {
         if (attempt < MAX_RETRIES) {
-          const waitMs = res.status === 503 ? 1500 : 2000
-          showStatus('loading', `⏳ AI chưa phản hồi (lần ${attempt + 1}/${MAX_RETRIES})... đang thử lại`)
+          const waitMs = res.status === 503 ? 2000 : 3000
+          showStatus('loading', `⏳ AI chưa phản hồi (lần ${attempt}/${MAX_RETRIES}), thử lại sau ${waitMs / 1000}s...`)
           await new Promise(r => setTimeout(r, waitMs))
           return _doSubmit(formData, action, attempt + 1)
         }
-        // Hết retry
-        const AI_TEMP_FIX = `⚠️ AI tạm thời không khả dụng\n\nCách fix tạm thời:\n• Sử dụng kết nối mạng khác (đổi WiFi hoặc dùng 4G/5G)\n• Sử dụng VPN\n• Thử lại sau vài phút\n• Dữ liệu phiên học của bạn đã được lưu an toàn`
-        showStatus('error', AI_TEMP_FIX, 5000)
-        toast.error('Không thể phân tích', 'Dịch vụ AI không khả dụng. Dữ liệu đã lưu.')
+        // Hết retry — dữ liệu chưa được lưu (lỗi ở tầng server trước DB write)
+        const AI_TEMP_FIX = `⚠️ AI tạm thời không khả dụng sau ${MAX_RETRIES} lần thử\n\nHãy thử:\n• Đổi mạng (WiFi ↔ 4G/5G) hoặc dùng VPN\n• Nhấn "⚡ Phân tích bằng AI" lại sau vài phút`
+        showStatus('error', AI_TEMP_FIX, 0)
+        toast.error('Không thể phân tích', 'Vui lòng thử lại hoặc đổi mạng.')
         setAiStatus({ phase: 'ready' }); setAnalyzing(false)
         return
       }
@@ -274,10 +349,12 @@ export default function Dashboard({ user, authFetch, onLogout, onNavigate, curre
       // ── AI thất bại (HTTP 207 hoặc success:false) ──
       if (res.status === 207 || data.success === false) {
         const sessionNumber = data.session_number as number
+        const entryId       = data.entry_id as number | undefined
         setTodaySessions(null); pendingData.current = null
         formRef.current?.reset()
         await loadData()
-        showStatus('error', `⚠️ Đã lưu phiên ${sessionNumber} nhưng AI không phản hồi\n\nCách fix tạm thời:\n• Thay đổi mạng (WiFi/4G/5G/VPN)\n• Thử lại sau vài phút\n• Dữ liệu đã được lưu an toàn`, 5000)
+        if (entryId) setPendingEntryId(entryId)
+        showStatus('warning', `⚠️ Đã lưu phiên ${sessionNumber} — AI chưa phản hồi\nNhấn "🔄 Thử lại AI" bên dưới, hoặc đổi mạng (WiFi/4G/VPN) rồi thử lại.`)
         toast.error('AI không phản hồi', 'Dữ liệu phiên học đã lưu an toàn.')
         setAiStatus({ phase: 'ready' }); setAnalyzing(false)
         return
@@ -294,6 +371,7 @@ export default function Dashboard({ user, authFetch, onLogout, onNavigate, curre
 
       // ── Thành công: entry + AI report đã lưu ─────────────────────────────
       setTodaySessions(null); pendingData.current = null
+      setPendingEntryId(null)
       formRef.current?.reset()
 
       const a = data.analysis as Record<string, unknown> | undefined
@@ -500,7 +578,11 @@ export default function Dashboard({ user, authFetch, onLogout, onNavigate, curre
                   right={<AIStatusBar status={aiStatus} />}
                 />
                 <EntryForm ref={formRef} onSubmit={d => submitEntry(d)} loading={submitting} />
-                <StatusBanner status={submitStatus} />
+                <StatusBanner
+                  status={submitStatus}
+                  onRetry={pendingEntryId ? retryAI : undefined}
+                  retrying={retrying}
+                />
               </div>
             </div>
           </div>
