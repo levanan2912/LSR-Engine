@@ -1,7 +1,17 @@
 node_modules/
 dist/
 .wrangler/
+
+# ── Secret files — KHÔNG được commit lên git ──
 .dev.vars
-*.log
 .env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
 .DS_Store
+Thumbs.db

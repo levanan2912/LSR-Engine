@@ -1,0 +1,20 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# .dev.vars.example  —  Template cho local development
+# ─────────────────────────────────────────────────────────────────────────────
+# HƯỚNG DẪN:
+#   1. Copy file này thành .dev.vars  (đừng đổi tên file gốc)
+#      cp .dev.vars.example .dev.vars
+#   2. Điền API keys thật của bạn vào .dev.vars
+#   3. File .dev.vars đã có trong .gitignore → KHÔNG bao giờ bị commit lên git
+#
+# Lấy Gemini API key miễn phí tại: https://aistudio.google.com/app/apikey
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Nhiều API keys phân cách bằng dấu phẩy (để tự động failover khi hết quota):
+GEMINI_API_KEYS=YOUR_GEMINI_KEY_1,YOUR_GEMINI_KEY_2
+
+# Hoặc chỉ 1 key (backward-compatible):
+GEMINI_API_KEY=YOUR_GEMINI_KEY_1
+
+# JWT secret — tự đặt bất kỳ chuỗi ngẫu nhiên nào (ít nhất 32 ký tự):
+JWT_SECRET=change-this-to-a-long-random-secret-string-in-production
