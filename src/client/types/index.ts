@@ -42,6 +42,11 @@ export interface AnalysisReport {
   analyzed_by?: string | null
   key_name?: string | null
 
+  // Exception-handling metadata (from server, not in DB)
+  session_count?: number
+  confidence_score?: number
+  is_outlier?: boolean
+
   // Meta
   created_at: string
 

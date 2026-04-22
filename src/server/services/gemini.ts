@@ -15,6 +15,10 @@ export interface AnalysisResult {
   key_name?: string       // friendly name of the API key used (e.g. "June")
   latency?: number        // latency of the winning model call (ms)
   total_latency?: number  // total chain time including failed attempts (ms)
+  // ── Exception-handling metadata (computed server-side, passed to client) ──
+  session_count?: number      // how many history sessions the AI had context for
+  confidence_score?: number   // 0–100 score based on history depth
+  is_outlier?: boolean        // true if this session deviates strongly from personal baseline but is not repeating
 }
 
 // ─── Entry & History types ─────────────────────────────────────────────────────
@@ -34,26 +38,140 @@ export interface EntryInput {
 
 type HistoryRow = Record<string, unknown>
 
-// ─── ANALYTICAL_RULES — Bộ quy tắc v12 (Compact, Token-Efficient) ─────────────
+// ─── ANALYTICAL_RULES — Bộ quy tắc v13 (Exception-aware, Baseline-aware) ────────
 
-export const ANALYTICAL_RULES = `Bạn là hệ thống phân tích hành vi học tập. Trả về DUY NHẤT một JSON object hợp lệ (không markdown, không text ngoài JSON) với đúng 6 fields:
-- risk_level: "Stable"|"Fluctuating"|"High Risk" (Stable=ổn định; Fluctuating=≥1 chỉ số dao động >1 bậc; High Risk=tập trung<3 VÀ (bỏ cuộc≥4 HOẶC không đạt mục tiêu))
-- key_signals: mảng 2–3 string, mỗi cái ≤25 từ, có số cụ thể (vd: "Tập trung 2/5, giảm từ 4/5 (1 phiên trước)"), chỉ mô tả hành vi đo được
+export const ANALYTICAL_RULES = `Bạn là hệ thống phân tích hành vi học tập dài hạn. Trả về DUY NHẤT một JSON object hợp lệ (không markdown, không text ngoài JSON) với đúng 6 fields:
+- risk_level: "Stable"|"Fluctuating"|"High Risk"
+  • Stable = chỉ số trong biên độ bình thường hoặc cải thiện so với baseline
+  • Fluctuating = ≥1 chỉ số dao động >1 bậc SO VỚI BASELINE (không so phiên trước)
+  • High Risk = tập trung<3 VÀ (bỏ cuộc≥4 HOẶC không đạt mục tiêu) VÀ xu hướng tiêu cực lặp ≥3 phiên
+  ⚠️ QUAN TRỌNG: Nếu prompt ghi "PHIÊN NGOẠI LỆ" → KHÔNG nâng lên High Risk chỉ vì 1 phiên xấu; tối đa là Fluctuating
+  ⚠️ QUAN TRỌNG: Chỉ nâng High Risk khi tín hiệu tiêu cực kéo dài liên tục, không phải 1 phiên đơn lẻ
+- key_signals: mảng 2–3 string, mỗi cái ≤25 từ, có số cụ thể (vd: "Tập trung 2/5, thấp hơn baseline 3.4/5"), tham chiếu baseline nếu có
 - primary_risk_driver: string ≤20 từ — tín hiệu chủ đạo từ key_signals
 - intervention_strategy: string ≤35 từ, bắt đầu "Để xử lý [driver]...", 1 hướng cụ thể
 - short_term_forecast: string ≤50 từ, cấu trúc "Nếu... có khả năng..."
 - action_plan_48h: mảng đúng 3 string ≤20 từ/cái (can thiệp / môi trường / đo lại)
 Cấm: từ tuyệt đối, nhãn tâm lý, "phiên -N" (dùng "N phiên trước"). Ngôn ngữ: tiếng Việt (trừ risk_level).`
 
-// ─── formatAnalysisData — session-based prompt (v8, token-optimized) ─────────
+// ─── computeBaseline — tính baseline cá nhân từ lịch sử ───────────────────────
+// Dùng tối đa 14 phiên, loại trừ 2 phiên gần nhất để tránh bias
+// Trả về null nếu không đủ dữ liệu (< 3 phiên tham chiếu)
+
+interface PersonalBaseline {
+  focus:    number   // trung bình focus/5
+  dropout:  number   // trung bình dropout/5
+  hours:    number   // trung bình giờ học
+  stdFocus: number   // độ lệch chuẩn focus
+  stdDropout: number
+  sampleSize: number // số phiên tham chiếu
+}
+
+function computeBaseline(historyData: HistoryRow[]): PersonalBaseline | null {
+  // Lấy tối đa 14 phiên (DESC — mới nhất trước), bỏ 2 phiên mới nhất để tránh bias
+  const refRows = historyData.slice(2, 16)  // index 2..15 (bỏ 0,1 — 2 phiên gần nhất)
+  if (refRows.length < 3) return null
+
+  const focuses   = refRows.map(r => Number(r.focus_level   ?? 3))
+  const dropouts  = refRows.map(r => Number(r.dropout_feeling ?? 3))
+  const hours     = refRows.map(r => Number(r.study_hours    ?? 0))
+
+  const mean = (arr: number[]) => arr.reduce((s, v) => s + v, 0) / arr.length
+  const std  = (arr: number[], m: number) =>
+    Math.sqrt(arr.reduce((s, v) => s + (v - m) ** 2, 0) / arr.length)
+
+  const mFocus   = mean(focuses)
+  const mDropout = mean(dropouts)
+
+  return {
+    focus:      Math.round(mFocus * 10) / 10,
+    dropout:    Math.round(mDropout * 10) / 10,
+    hours:      Math.round(mean(hours) * 10) / 10,
+    stdFocus:   Math.round(std(focuses,  mFocus)   * 10) / 10,
+    stdDropout: Math.round(std(dropouts, mDropout) * 10) / 10,
+    sampleSize: refRows.length,
+  }
+}
+
+// ─── detectOutlier — phiên hiện tại có phải ngoại lệ không? ─────────────────
+// Ngoại lệ = lệch > 1.5σ so với baseline NHƯNG chưa lặp lại (chỉ 1 phiên)
+// Nếu lặp lại ≥ 2 phiên liên tiếp → KHÔNG phải ngoại lệ → xu hướng thật
+
+function detectOutlier(
+  today: EntryInput,
+  historyData: HistoryRow[],
+  baseline: PersonalBaseline | null,
+): boolean {
+  if (!baseline || baseline.sampleSize < 3) return false
+  const threshold = 1.5
+
+  // Kiểm tra phiên hiện tại có lệch mạnh so với baseline
+  const focusDev   = baseline.stdFocus   > 0.3
+    ? Math.abs(today.focus_level    - baseline.focus)   / baseline.stdFocus
+    : 0
+  const dropoutDev = baseline.stdDropout > 0.3
+    ? Math.abs(today.dropout_feeling - baseline.dropout) / baseline.stdDropout
+    : 0
+
+  const isDeviant = focusDev > threshold || dropoutDev > threshold
+  if (!isDeviant) return false
+
+  // Kiểm tra phiên ngay trước (index 0 — mới nhất trong history) có cùng pattern không
+  const prev = historyData[0]
+  if (!prev) return true   // không có history → lệch mạnh = ngoại lệ (chưa đủ context)
+
+  const prevFocusDev   = baseline.stdFocus   > 0.3
+    ? Math.abs(Number(prev.focus_level ?? 3)    - baseline.focus)   / baseline.stdFocus
+    : 0
+  const prevDropoutDev = baseline.stdDropout > 0.3
+    ? Math.abs(Number(prev.dropout_feeling ?? 3) - baseline.dropout) / baseline.stdDropout
+    : 0
+
+  // Nếu phiên trước CŨNG lệch mạnh → đây là xu hướng, không phải ngoại lệ
+  if (prevFocusDev > threshold || prevDropoutDev > threshold) return false
+
+  return true  // chỉ phiên này lệch, phiên trước bình thường → ngoại lệ nhất thời
+}
+
+// ─── countConsecutiveDecline — đếm số phiên tiêu cực liên tiếp gần nhất ────
+// "Tiêu cực" = focus < baseline - 0.5 HOẶC dropout > baseline + 0.5
+
+function countConsecutiveDecline(
+  today: EntryInput,
+  historyData: HistoryRow[],
+  baseline: PersonalBaseline | null,
+): number {
+  if (!baseline) return 0
+  const isNegative = (f: number, d: number) =>
+    f < baseline.focus - 0.5 || d > baseline.dropout + 0.5
+
+  let count = isNegative(today.focus_level, today.dropout_feeling) ? 1 : 0
+  if (count === 0) return 0   // phiên hiện tại không tiêu cực → chuỗi = 0
+
+  for (const row of historyData.slice(0, 6)) {  // kiểm tra tối đa 6 phiên trước
+    if (isNegative(Number(row.focus_level ?? 3), Number(row.dropout_feeling ?? 3))) {
+      count++
+    } else {
+      break
+    }
+  }
+  return count
+}
+
+// ─── formatAnalysisData — session-based prompt (v9, baseline-aware) ──────────
 // INPUT:  historyData thô từ DB (DESC — mới nhất trước).
-//         Slice tối đa 5 phiên (đủ context, giảm token so với v7 dùng 7 phiên).
-//         Output ngắn gọn dạng bảng thay vì bullet dài.
+//         Slice tối đa 7 phiên để hiểu xu hướng dài hơn.
+//         Thêm baseline cá nhân, outlier flag, consecutive decline count.
 
 export function formatAnalysisData(todayData: EntryInput, historyData: HistoryRow[]): string {
-  // allSessions: ASC (cũ → mới), tối đa 5 phiên lịch sử
-  const allSessions = historyData.slice(0, 5).reverse()
+  // allSessions: ASC (cũ → mới), tối đa 7 phiên lịch sử (tăng từ 5 để phát hiện xu hướng tốt hơn)
+  const allSessions = historyData.slice(0, 7).reverse()
   const n           = allSessions.length
+
+  // ── Tính baseline, outlier, consecutive decline ───────────────────────────
+  const baseline        = computeBaseline(historyData)
+  const isOutlier       = detectOutlier(todayData, historyData, baseline)
+  const conseqDecline   = countConsecutiveDecline(todayData, historyData, baseline)
 
   const dd = todayData.study_hours > 0
     ? (todayData.distraction_count / todayData.study_hours).toFixed(1)
@@ -67,13 +185,28 @@ F=${today.focus_level}/5 H=${today.study_hours}h D=${today.distraction_count}(${
   if (today.distracting_factors) out += ` dist="${today.distracting_factors}"`
   if (today.emotional_state)     out += ` emo="${today.emotional_state}"`
 
+  if (isOutlier) {
+    out += `\n⚠️ PHIÊN NGOẠI LỆ: phiên này lệch mạnh so với baseline nhưng CHƯA LẶP LẠI — không nâng High Risk chỉ vì phiên này.`
+  }
+  if (conseqDecline >= 3) {
+    out += `\n🚨 XU HƯỚNG XẤU KÉO DÀI: ${conseqDecline} phiên tiêu cực liên tiếp — có thể nâng cảnh báo.`
+  } else if (conseqDecline === 2) {
+    out += `\n⚠️ Tín hiệu xấu lặp lần 2 (${conseqDecline} phiên liên tiếp) — theo dõi thêm, chưa đủ cơ sở nâng cảnh báo.`
+  }
+
   if (n === 0) {
-    out += '\n[Phiên đầu tiên, không có lịch sử]'
+    out += '\n[Phiên đầu tiên, không có lịch sử — không có baseline cá nhân]'
     return out
   }
 
+  // ── Baseline cá nhân ─────────────────────────────────────────────────────
+  if (baseline) {
+    out += `\n\nBASELINE CÁ NHÂN (từ ${baseline.sampleSize} phiên tham chiếu): F=${baseline.focus}/5 (σ=${baseline.stdFocus}) DO=${baseline.dropout}/5 (σ=${baseline.stdDropout}) H=${baseline.hours}h`
+  } else {
+    out += `\n\nBASELINE: chưa đủ dữ liệu (cần ≥5 phiên để tính baseline ổn định)`
+  }
+
   // ── Lịch sử (ASC, cũ → mới) — compact table ─────────────────────────────
-  // Tiêu đề: N phiên trước (offset từ phiên hiện tại)
   out += `\n\nLỊCH SỬ (${n} phiên, cũ→mới):`
   allSessions.forEach((s, i) => {
     const h      = Number(s.study_hours       || 0)
@@ -95,6 +228,28 @@ F=${today.focus_level}/5 H=${today.study_hours}h D=${today.distraction_count}(${
   out += `\n(pt=phiên trước; F=tập trung/5; H=giờ; D=mất tập trung; G=mục tiêu Y/N; DO=bỏ cuộc/5)`
 
   return out
+}
+
+// ─── getExceptionMeta — trả về metadata để gắn vào AnalysisResult ─────────
+export function getExceptionMeta(
+  todayData:   EntryInput,
+  historyData: HistoryRow[],
+): { session_count: number; confidence_score: number; is_outlier: boolean } {
+  const n        = historyData.slice(0, 7).length
+  const baseline = computeBaseline(historyData)
+  const isOut    = detectOutlier(todayData, historyData, baseline)
+
+  // confidence_score: tăng dần theo số phiên (tối đa ~90 khi ≥10 phiên)
+  let score = n === 0 ? 30 : Math.min(30 + n * 7, 90)
+  if (n <= 2)  score = Math.min(score, 45)
+  if (n <= 4)  score = Math.min(score, 65)
+  if (n <= 6)  score = Math.min(score, 78)
+
+  return {
+    session_count:    n,
+    confidence_score: Math.round(score),
+    is_outlier:       isOut,
+  }
 }
 
 // ─── validateAnalysisOutput — kiểm tra vi phạm quy tắc ───────────────────────
@@ -581,6 +736,10 @@ export async function analyzeStudyBehavior(
   }
   console.log(`🚀 Bắt đầu phân tích AI — ${keyPool.length} key(s) trong pool`)
 
+  // ── Tính exception metadata trước khi gọi AI ─────────────────────────────
+  const exceptionMeta = getExceptionMeta(todayData, historyData)
+  console.log(`📊 Exception metadata: session_count=${exceptionMeta.session_count} confidence=${exceptionMeta.confidence_score}% is_outlier=${exceptionMeta.is_outlier}`)
+
   // ── Build prompt ──────────────────────────────────────────────────────────
   const dataInput  = formatAnalysisData(todayData, historyData)
   // Prompt ngắn gọn — toàn bộ quy tắc đã nằm trong systemInstruction
@@ -712,6 +871,10 @@ Phân tích và trả về JSON 6 fields: risk_level, key_signals(2-3 items), pr
           latency:         outcome.latency,
           total_latency:   totalElapsed,
           raw_ai_response: undefined,
+          // Gắn exception metadata vào kết quả
+          session_count:    exceptionMeta.session_count,
+          confidence_score: exceptionMeta.confidence_score,
+          is_outlier:       exceptionMeta.is_outlier,
         }
       }
 

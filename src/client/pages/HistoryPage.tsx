@@ -97,9 +97,18 @@ function DaySummaryBar({ sessions }: { sessions: SessionWithReport[] }) {
 }
 
 // ─── Report Panel ─────────────────────────────────────────────────────────────
-function ReportPanel({ report, riskLevel }: { report: SessionReport; riskLevel: string }) {
+function ReportPanel({ report, riskLevel, isDark = true }: { report: SessionReport; riskLevel: string; isDark?: boolean }) {
   const [checkedItems, setCheckedItems] = useState<Record<number, boolean>>({})
   const riskColor = riskLevel === 'High Risk' ? '#f87171' : riskLevel === 'Fluctuating' ? '#fbbf24' : '#34d399'
+  const signalLabelColor  = isDark ? '#fbbf24' : '#b45309'
+  const signalBg          = isDark ? 'rgba(251,191,36,0.06)'  : 'rgba(180,83,9,0.06)'
+  const signalBorder      = isDark ? '1px solid rgba(251,191,36,0.12)' : '1px solid rgba(180,83,9,0.15)'
+  const signalNumColor    = isDark ? '#fbbf24' : '#92400e'
+  const cardBg            = isDark ? 'rgba(255,255,255,0.02)'  : 'rgba(0,0,0,0.025)'
+  const actionBorderColor = isDark ? 'rgba(255,255,255,0.08)'  : 'rgba(0,0,0,0.10)'
+  const actionFaintColor  = isDark ? '#475569' : '#94a3b8'
+  const textPrimary       = isDark ? 'rgba(255,255,255,0.88)'  : 'rgba(0,0,0,0.82)'
+  const textSecondary     = isDark ? '#94a3b8'                  : '#64748b'
 
   const toggleCheck = (i: number) => setCheckedItems(prev => ({ ...prev, [i]: !prev[i] }))
 
@@ -109,24 +118,24 @@ function ReportPanel({ report, riskLevel }: { report: SessionReport; riskLevel: 
       {/* ── Key Signals ── */}
       {report.key_signals.length > 0 && (
         <div style={{
-          background: 'var(--bg-card, rgba(255,255,255,0.02))',
-          border: '1px solid rgba(251,191,36,0.25)',
-          borderLeft: '3px solid #fbbf24',
+          background: cardBg,
+          border: `1px solid ${isDark ? 'rgba(251,191,36,0.25)' : 'rgba(180,83,9,0.22)'}`,
+          borderLeft: `3px solid ${signalLabelColor}`,
           borderRadius: '10px', padding: '12px 14px',
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
             <span style={{ fontSize: '14px' }}>⚠️</span>
-            <span style={{ fontFamily: 'Space Grotesk, sans-serif', color: '#fbbf24', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px' }}>Tín hiệu phát hiện</span>
+            <span style={{ fontFamily: 'Space Grotesk, sans-serif', color: signalLabelColor, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px' }}>Tín hiệu phát hiện</span>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '7px' }}>
             {report.key_signals.map((s, i) => (
               <div key={i} style={{
                 display: 'flex', alignItems: 'flex-start', gap: '8px',
-                padding: '7px 10px', background: 'rgba(251,191,36,0.06)',
-                borderRadius: '7px', border: '1px solid rgba(251,191,36,0.12)',
+                padding: '7px 10px', background: signalBg,
+                borderRadius: '7px', border: signalBorder,
               }}>
-                <span style={{ color: '#fbbf24', fontSize: '10px', marginTop: '3px', flexShrink: 0, fontWeight: 700 }}>#{i + 1}</span>
-                <span style={{ color: 'var(--text-primary)', fontSize: '12.5px', lineHeight: 1.55, fontWeight: 500 }}>{s}</span>
+                <span style={{ color: signalNumColor, fontSize: '10px', marginTop: '3px', flexShrink: 0, fontWeight: 700 }}>#{i + 1}</span>
+                <span style={{ color: textPrimary, fontSize: '12.5px', lineHeight: 1.55, fontWeight: 500 }}>{s}</span>
               </div>
             ))}
           </div>
@@ -136,7 +145,7 @@ function ReportPanel({ report, riskLevel }: { report: SessionReport; riskLevel: 
       {/* ── Forecast ── */}
       {report.short_term_forecast && (
         <div style={{
-          background: 'var(--bg-card, rgba(255,255,255,0.02))',
+          background: cardBg,
           border: '1px solid rgba(129,140,248,0.25)',
           borderLeft: '3px solid #818cf8',
           borderRadius: '10px', padding: '12px 14px',
@@ -145,7 +154,7 @@ function ReportPanel({ report, riskLevel }: { report: SessionReport; riskLevel: 
             <span style={{ fontSize: '14px' }}>🔮</span>
             <span style={{ fontFamily: 'Space Grotesk, sans-serif', color: '#818cf8', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px' }}>Dự báo 5–7 phiên tới</span>
           </div>
-          <p style={{ color: 'var(--text-primary)', fontSize: '12.5px', lineHeight: 1.65, margin: 0 }}>{report.short_term_forecast}</p>
+          <p style={{ color: textPrimary, fontSize: '12.5px', lineHeight: 1.65, margin: 0 }}>{report.short_term_forecast}</p>
         </div>
       )}
 
@@ -161,14 +170,14 @@ function ReportPanel({ report, riskLevel }: { report: SessionReport; riskLevel: 
             <span style={{ fontSize: '14px' }}>💡</span>
             <span style={{ fontFamily: 'Space Grotesk, sans-serif', color: riskColor, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px' }}>Chiến lược can thiệp</span>
           </div>
-          <p style={{ color: 'var(--text-primary)', fontSize: '12.5px', lineHeight: 1.65, margin: 0 }}>{report.intervention_strategy}</p>
+          <p style={{ color: textPrimary, fontSize: '12.5px', lineHeight: 1.65, margin: 0 }}>{report.intervention_strategy}</p>
         </div>
       )}
 
       {/* ── Action Plan ── */}
       {report.action_plan_48h.length > 0 && (
         <div style={{
-          background: 'var(--bg-card, rgba(255,255,255,0.02))',
+          background: cardBg,
           border: '1px solid rgba(99,102,241,0.25)',
           borderLeft: '3px solid #6366f1',
           borderRadius: '10px', padding: '12px 14px',
@@ -176,25 +185,25 @@ function ReportPanel({ report, riskLevel }: { report: SessionReport; riskLevel: 
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
             <span style={{ fontSize: '14px' }}>📋</span>
             <span style={{ fontFamily: 'Space Grotesk, sans-serif', color: '#6366f1', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px' }}>Kế hoạch hành động 48h</span>
-            <span style={{ marginLeft: 'auto', fontSize: '9px', color: 'var(--text-faint, #475569)', fontFamily: 'Space Grotesk, sans-serif' }}>Nhấn để đánh dấu</span>
+            <span style={{ marginLeft: 'auto', fontSize: '9px', color: actionFaintColor, fontFamily: 'Space Grotesk, sans-serif' }}>Nhấn để đánh dấu</span>
           </div>
           {report.action_plan_48h.map((step, i) => (
             <div key={i} onClick={() => toggleCheck(i)} style={{
               display: 'flex', alignItems: 'flex-start', gap: '10px',
               padding: '8px 0', cursor: 'pointer', transition: 'opacity 0.2s',
               opacity: checkedItems[i] ? 0.45 : 1,
-              borderBottom: i < report.action_plan_48h.length - 1 ? '1px solid var(--section-border, rgba(255,255,255,0.04))' : undefined,
+              borderBottom: i < report.action_plan_48h.length - 1 ? `1px solid ${actionBorderColor}` : undefined,
             }}>
               <div style={{
                 flexShrink: 0, width: '18px', height: '18px', borderRadius: '6px', marginTop: '1px',
-                border: `2px solid ${checkedItems[i] ? '#6366f1' : 'var(--border-card, rgba(255,255,255,0.08))'}`,
+                border: `2px solid ${checkedItems[i] ? '#6366f1' : actionBorderColor}`,
                 background: checkedItems[i] ? 'rgba(99,102,241,0.2)' : 'transparent',
                 display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s',
               }}>
                 {checkedItems[i] && <span style={{ color: '#818cf8', fontSize: '10px', fontWeight: 800 }}>✓</span>}
               </div>
               <span style={{
-                color: checkedItems[i] ? 'var(--text-faint, #475569)' : 'var(--text-secondary, #94a3b8)',
+                color: checkedItems[i] ? actionFaintColor : textSecondary,
                 fontSize: '12.5px', lineHeight: 1.55,
                 textDecoration: checkedItems[i] ? 'line-through' : 'none', transition: 'all 0.2s',
               }}>{step}</span>
@@ -351,7 +360,7 @@ function SessionRow({ session, expandedKey, onToggle, isDark = true, onDelete }:
           )}
           {report
             ? <ReportPanel report={report} riskLevel={riskLvl} isDark={isDark} />
-            : <p style={{ color: 'var(--text-secondary, #94a3b8)', fontSize: '13px', fontStyle: 'italic', margin: 0 }}>Chưa có báo cáo AI cho phiên này.</p>
+            : <p style={{ color: 'var(--text-secondary)', fontSize: '13px', fontStyle: 'italic', margin: 0 }}>Chưa có báo cáo AI cho phiên này.</p>
           }
         </div>
       )}
@@ -913,6 +922,59 @@ export default function HistoryPage({ user, authFetch, onLogout, onNavigate, cur
         *::-webkit-scrollbar-track { background: transparent; }
         *::-webkit-scrollbar-thumb { background: rgba(99,102,241,0.2); border-radius: 2px; }
 
+        /* ── CSS custom properties — light / dark ──────────────────────────── */
+        :root {
+          ${isDark ? `
+          --text-primary:   rgba(255,255,255,0.88);
+          --text-secondary: rgba(255,255,255,0.55);
+          --text-muted:     rgba(255,255,255,0.35);
+          --text-faint:     rgba(255,255,255,0.20);
+          --nav-inactive:   #64748b;
+          --nav-email:      #475569;
+          --nav-logout:     #94a3b8;
+          --bg-card:        rgba(255,255,255,0.03);
+          --bg-card-strong: rgba(255,255,255,0.025);
+          --border-card:    rgba(255,255,255,0.07);
+          --bg-row:         rgba(255,255,255,0.02);
+          --bg-row-open:    rgba(255,255,255,0.035);
+          --border-row:     rgba(255,255,255,0.06);
+          --section-border: rgba(255,255,255,0.05);
+          --bg-expanded:    rgba(0,0,0,0.15);
+          --card-shadow:    0 2px 12px rgba(0,0,0,0.25);
+          --stats-label:    #94a3b8;
+          --stats-sub:      #94a3b8;
+          --stats-divider:  rgba(255,255,255,0.06);
+          --chip-label:     #94a3b8;
+          --meta-label:     #94a3b8;
+          --meta-value:     #cbd5e1;
+          --session-time:   #94a3b8;
+          ` : `
+          --text-primary:   rgba(0,0,0,0.85);
+          --text-secondary: rgba(0,0,0,0.55);
+          --text-muted:     rgba(0,0,0,0.40);
+          --text-faint:     rgba(0,0,0,0.28);
+          --nav-inactive:   #64748b;
+          --nav-email:      #64748b;
+          --nav-logout:     #475569;
+          --bg-card:        rgba(0,0,0,0.04);
+          --bg-card-strong: rgba(0,0,0,0.03);
+          --border-card:    rgba(0,0,0,0.09);
+          --bg-row:         rgba(0,0,0,0.02);
+          --bg-row-open:    rgba(0,0,0,0.04);
+          --border-row:     rgba(0,0,0,0.08);
+          --section-border: rgba(0,0,0,0.07);
+          --bg-expanded:    rgba(0,0,0,0.03);
+          --card-shadow:    0 2px 12px rgba(0,0,0,0.08);
+          --stats-label:    #64748b;
+          --stats-sub:      #64748b;
+          --stats-divider:  rgba(0,0,0,0.07);
+          --chip-label:     #64748b;
+          --meta-label:     #64748b;
+          --meta-value:     #374151;
+          --session-time:   #64748b;
+          `}
+        }
+
         /* Stats bar: scroll horizontally on small screens instead of clipping */
         .stats-bar-row { overflow-x: auto; -webkit-overflow-scrolling: touch; }
         .stats-bar-row > * { min-width: 80px; }
@@ -930,7 +992,6 @@ export default function HistoryPage({ user, authFetch, onLogout, onNavigate, cur
             grid-template-columns: 1fr auto !important;
             gap: 6px 8px !important;
           }
-          /* Hide the individual columns, show only badge + risk + chevron */
           .session-col-time,
           .session-col-distract,
           .session-col-focus,
@@ -943,7 +1004,6 @@ export default function HistoryPage({ user, authFetch, onLogout, onNavigate, cur
           .history-nav-logotext { display: none !important; }
         }
         button:focus-visible { outline: 2px solid #3b82f6; outline-offset: 2px; }
-        [data-theme='light'] .day-date-pill { background: rgba(0,0,0,0.04) !important; border-color: rgba(0,0,0,0.08) !important; }
 
         /* Day summary bar wraps cleanly */
         .day-summary-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }

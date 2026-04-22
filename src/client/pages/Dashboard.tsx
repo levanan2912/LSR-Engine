@@ -233,6 +233,9 @@ export default function Dashboard({ user, authFetch, onLogout, onNavigate, curre
           intervention_strategy: String(a.intervention_strategy || ''),
           analyzed_by:           (a.analyzed_by as string)       ?? null,
           key_name:              (a.key_name as string)          ?? null,
+          session_count:         typeof a.session_count    === 'number' ? a.session_count    : undefined,
+          confidence_score:      typeof a.confidence_score === 'number' ? a.confidence_score : undefined,
+          is_outlier:            typeof a.is_outlier       === 'boolean' ? a.is_outlier      : undefined,
         })
         setAiStatus({
           phase:     'done',
@@ -389,6 +392,9 @@ export default function Dashboard({ user, authFetch, onLogout, onNavigate, curre
           intervention_strategy: String(a.intervention_strategy || ''),
           analyzed_by:           (a.analyzed_by as string)       ?? null,
           key_name:              (a.key_name as string)           ?? null,
+          session_count:         typeof a.session_count    === 'number' ? a.session_count    : undefined,
+          confidence_score:      typeof a.confidence_score === 'number' ? a.confidence_score : undefined,
+          is_outlier:            typeof a.is_outlier       === 'boolean' ? a.is_outlier      : undefined,
         })
         setAiStatus({
           phase:     'done',
