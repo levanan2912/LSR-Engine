@@ -598,6 +598,135 @@ admin.put('/model-config', async (c) => {
 })
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// FORUM MODERATION  (subadmin + rootadmin)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// GET /api/admin/forum/pending?page=1&limit=20
+admin.get('/forum/pending', async (c) => {
+  const page  = Math.max(1, parseInt(c.req.query('page')  || '1',  10))
+  const limit = Math.min(50, Math.max(1, parseInt(c.req.query('limit') || '20', 10)))
+  const offset = (page - 1) * limit
+  const { DB } = c.env
+
+  try {
+    const countRow = await DB.prepare(
+      `SELECT COUNT(*) as total FROM forum_posts WHERE status = 'pending'`
+    ).first<{ total: number }>()
+    const total = countRow?.total ?? 0
+
+    const rows = await DB.prepare(`
+      SELECT
+        fp.id, fp.user_id, fp.title, fp.content, fp.created_at,
+        fp.status, fp.ai_moderation_reason,
+        u.full_name AS author_name, u.email AS author_email,
+        (SELECT GROUP_CONCAT(ft.label, ', ')
+         FROM forum_post_tags fpt
+         JOIN forum_tags ft ON ft.id = fpt.tag_id
+         WHERE fpt.post_id = fp.id) AS tags_label
+      FROM forum_posts fp
+      JOIN users u ON u.id = fp.user_id
+      WHERE fp.status = 'pending'
+      ORDER BY fp.created_at ASC
+      LIMIT ? OFFSET ?
+    `).bind(limit, offset).all()
+
+    return c.json({ posts: rows.results, total, page, limit, total_pages: Math.ceil(total / limit) })
+  } catch (err: any) {
+    return c.json({ error: 'db_error', message: err.message }, 500)
+  }
+})
+
+// GET /api/admin/forum/approved?page=1&limit=20
+admin.get('/forum/approved', async (c) => {
+  const page  = Math.max(1, parseInt(c.req.query('page')  || '1',  10))
+  const limit = Math.min(50, Math.max(1, parseInt(c.req.query('limit') || '20', 10)))
+  const offset = (page - 1) * limit
+  const search = c.req.query('search') || ''
+  const { DB } = c.env
+
+  try {
+    const searchWhere = search ? `AND (fp.title LIKE ? OR u.email LIKE ?)` : ''
+    const binds: any[] = search ? [`%${search}%`, `%${search}%`, limit, offset] : [limit, offset]
+
+    const countBinds: any[] = search ? [`%${search}%`, `%${search}%`] : []
+    const countRow = await DB.prepare(
+      `SELECT COUNT(*) as total FROM forum_posts fp JOIN users u ON u.id = fp.user_id WHERE fp.status = 'approved' ${searchWhere}`
+    ).bind(...countBinds).first<{ total: number }>()
+    const total = countRow?.total ?? 0
+
+    const rows = await DB.prepare(`
+      SELECT
+        fp.id, fp.user_id, fp.title, fp.content, fp.created_at,
+        fp.status,
+        u.full_name AS author_name, u.email AS author_email,
+        (SELECT COUNT(*) FROM forum_comments fc WHERE fc.post_id = fp.id) AS comment_count,
+        (SELECT COUNT(*) FROM forum_likes fl WHERE fl.post_id = fp.id) AS like_count,
+        (SELECT GROUP_CONCAT(ft.label, ', ')
+         FROM forum_post_tags fpt
+         JOIN forum_tags ft ON ft.id = fpt.tag_id
+         WHERE fpt.post_id = fp.id) AS tags_label
+      FROM forum_posts fp
+      JOIN users u ON u.id = fp.user_id
+      WHERE fp.status = 'approved' ${searchWhere}
+      ORDER BY fp.created_at DESC
+      LIMIT ? OFFSET ?
+    `).bind(...binds).all()
+
+    return c.json({ posts: rows.results, total, page, limit, total_pages: Math.ceil(total / limit) })
+  } catch (err: any) {
+    return c.json({ error: 'db_error', message: err.message }, 500)
+  }
+})
+
+// POST /api/admin/forum/posts/:id/approve
+admin.post('/forum/posts/:id/approve', async (c) => {
+  const postId = parseInt(c.req.param('id'), 10)
+  if (isNaN(postId)) return c.json({ error: 'invalid_id' }, 400)
+  const { DB } = c.env
+
+  try {
+    const post = await DB.prepare(`SELECT id, status FROM forum_posts WHERE id = ?`).bind(postId).first<{ id: number; status: string }>()
+    if (!post) return c.json({ error: 'not_found' }, 404)
+
+    await DB.prepare(`UPDATE forum_posts SET status = 'approved', ai_moderation_reason = NULL WHERE id = ?`).bind(postId).run()
+    return c.json({ success: true, message: 'Bài viết đã được duyệt.' })
+  } catch (err: any) {
+    return c.json({ error: 'db_error', message: err.message }, 500)
+  }
+})
+
+// DELETE /api/admin/forum/posts/:id  — hard delete (admin can delete any post)
+admin.delete('/forum/posts/:id', async (c) => {
+  const postId = parseInt(c.req.param('id'), 10)
+  if (isNaN(postId)) return c.json({ error: 'invalid_id' }, 400)
+  const { DB } = c.env
+
+  try {
+    const post = await DB.prepare(`SELECT id FROM forum_posts WHERE id = ?`).bind(postId).first()
+    if (!post) return c.json({ error: 'not_found' }, 404)
+
+    await DB.prepare(`DELETE FROM forum_posts WHERE id = ?`).bind(postId).run()
+    return c.json({ success: true, message: 'Đã xóa bài viết.' })
+  } catch (err: any) {
+    return c.json({ error: 'db_error', message: err.message }, 500)
+  }
+})
+
+// GET /api/admin/forum/stats  — summary counts
+admin.get('/forum/stats', async (c) => {
+  const { DB } = c.env
+  try {
+    const pending  = await DB.prepare(`SELECT COUNT(*) as c FROM forum_posts WHERE status='pending'`).first<{c:number}>()
+    const approved = await DB.prepare(`SELECT COUNT(*) as c FROM forum_posts WHERE status='approved'`).first<{c:number}>()
+    const total    = await DB.prepare(`SELECT COUNT(*) as c FROM forum_posts`).first<{c:number}>()
+    const comments = await DB.prepare(`SELECT COUNT(*) as c FROM forum_comments`).first<{c:number}>()
+    return c.json({ pending: pending?.c ?? 0, approved: approved?.c ?? 0, total: total?.c ?? 0, comments: comments?.c ?? 0 })
+  } catch (err: any) {
+    return c.json({ error: 'db_error', message: err.message }, 500)
+  }
+})
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // GET /api/admin/me  — verify admin token & return role
 // ═══════════════════════════════════════════════════════════════════════════════
 admin.get('/me', async (c) => {

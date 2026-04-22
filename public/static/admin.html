@@ -218,6 +218,10 @@ tr:hover td{background:rgba(255,255,255,.02)}
       <button class="nav-item" onclick="navigate('apikeys')" data-page="apikeys">
         <span class="nav-icon">🔑</span> API Keys
       </button>
+      <button class="nav-item" onclick="navigate('forummod')" data-page="forummod">
+        <span class="nav-icon">📝</span> Duyệt bài viết
+        <span id="sb-pending-badge" style="display:none;margin-left:auto;background:#ef4444;color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:10px">0</span>
+      </button>
     </nav>
     <div class="sb-footer">
       <div class="sb-user" id="sb-user-name">–</div>
@@ -390,6 +394,8 @@ function initApp() {
   document.getElementById('sb-user-name').textContent = ADMIN?.full_name || ADMIN?.email || '–'
   document.getElementById('sb-user-role').textContent = ADMIN?.role || '–'
   navigate('dashboard')
+  // Show pending count badge after login
+  setTimeout(loadFmSidebarBadge, 1000)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -398,9 +404,9 @@ function initApp() {
 function navigate(page) {
   currentPage = page
   document.querySelectorAll('.nav-item').forEach(el => el.classList.toggle('active', el.dataset.page === page))
-  const titles = { dashboard:'Dashboard', users:'Quản lý Người dùng', entries:'Quản lý Phiên học', reports:'Báo cáo AI', apikeys:'API Keys' }
+  const titles = { dashboard:'Dashboard', users:'Quản lý Người dùng', entries:'Quản lý Phiên học', reports:'Báo cáo AI', apikeys:'API Keys', forummod:'Duyệt bài viết Diễn đàn' }
   document.getElementById('topbar-title').textContent = titles[page] || page
-  const pages = { dashboard: renderDashboard, users: renderUsers, entries: renderEntries, reports: renderReports, apikeys: renderApiKeys }
+  const pages = { dashboard: renderDashboard, users: renderUsers, entries: renderEntries, reports: renderReports, apikeys: renderApiKeys, forummod: renderForumMod }
   if (pages[page]) pages[page]()
 }
 
@@ -1478,6 +1484,270 @@ async function saveModelConfig() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// FORUM MODERATION PAGE
+// ═══════════════════════════════════════════════════════════════════════════════
+let forumModState = { tab: 'pending', pendingPage: 1, approvedPage: 1, approvedSearch: '', pendingTotal: 0, approvedTotal: 0 }
+
+function renderForumMod() {
+  document.getElementById('content').innerHTML = `
+    <!-- Stats row -->
+    <div id="fm-stats" style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px">
+      ${[0,1,2,3].map(()=>`<div class="stat-card"><div class="stat-label">…</div><div class="stat-val" style="color:var(--muted)">–</div></div>`).join('')}
+    </div>
+
+    <!-- Sub-tabs -->
+    <div style="display:flex;gap:8px;margin-bottom:16px;border-bottom:1px solid var(--border);padding-bottom:10px">
+      <button id="fmt-pending"  class="btn btn-sm btn-primary"  onclick="switchFmTab('pending')"  style="font-size:12px">⏳ Chờ duyệt <span id="fmt-pending-cnt" style="background:rgba(255,255,255,0.2);border-radius:10px;padding:0 6px;margin-left:4px"></span></button>
+      <button id="fmt-approved" class="btn btn-sm btn-ghost"    onclick="switchFmTab('approved')" style="font-size:12px">✅ Đã duyệt</button>
+      <div style="flex:1"></div>
+      <button class="btn btn-ghost btn-sm" onclick="loadFmStats();loadFmPending();loadFmApproved()" style="font-size:12px">🔄 Làm mới</button>
+    </div>
+
+    <!-- Pending tab -->
+    <div id="fm-tab-pending">
+      <div class="section">
+        <div class="section-head">
+          <span class="section-title">⏳ Bài viết chờ duyệt</span>
+          <span id="fm-pending-count" style="font-size:12px;color:var(--muted)"></span>
+        </div>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr>
+              <th>ID</th><th>Tiêu đề</th><th>Tác giả</th><th>Thể loại</th>
+              <th>Ghi chú AI</th><th>Ngày đăng</th><th>Hành động</th>
+            </tr></thead>
+            <tbody id="fm-pending-tbody"><tr class="loading-row"><td colspan="7"><span class="spinner"></span></td></tr></tbody>
+          </table>
+        </div>
+        <div class="section-body" style="padding-top:0">
+          <div class="pagination" id="fm-pending-pagination"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Approved tab -->
+    <div id="fm-tab-approved" style="display:none">
+      <div class="filter-bar" style="margin-bottom:14px">
+        <input id="fm-search" placeholder="Tìm theo tiêu đề hoặc email..." value="${forumModState.approvedSearch}"
+          style="background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:7px;color:var(--text);padding:6px 11px;font-size:12px;width:280px"
+          oninput="forumModState.approvedSearch=this.value" onkeydown="if(event.key==='Enter'){forumModState.approvedPage=1;loadFmApproved()}"/>
+        <button class="btn btn-primary btn-sm" onclick="forumModState.approvedPage=1;loadFmApproved()">Tìm kiếm</button>
+      </div>
+      <div class="section">
+        <div class="section-head">
+          <span class="section-title">✅ Bài viết đã duyệt</span>
+          <span id="fm-approved-count" style="font-size:12px;color:var(--muted)"></span>
+        </div>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr>
+              <th>ID</th><th>Tiêu đề</th><th>Tác giả</th><th>Thể loại</th>
+              <th>👍</th><th>💬</th><th>Ngày đăng</th><th>Hành động</th>
+            </tr></thead>
+            <tbody id="fm-approved-tbody"><tr class="loading-row"><td colspan="8"><span class="spinner"></span></td></tr></tbody>
+          </table>
+        </div>
+        <div class="section-body" style="padding-top:0">
+          <div class="pagination" id="fm-approved-pagination"></div>
+        </div>
+      </div>
+    </div>
+  `
+  loadFmStats()
+  loadFmPending()
+  loadFmApproved()
+}
+
+function switchFmTab(tab) {
+  forumModState.tab = tab
+  document.getElementById('fm-tab-pending').style.display  = tab === 'pending'  ? 'block' : 'none'
+  document.getElementById('fm-tab-approved').style.display = tab === 'approved' ? 'block' : 'none'
+  document.getElementById('fmt-pending').className  = 'btn btn-sm ' + (tab === 'pending'  ? 'btn-primary' : 'btn-ghost')
+  document.getElementById('fmt-approved').className = 'btn btn-sm ' + (tab === 'approved' ? 'btn-primary' : 'btn-ghost')
+}
+
+async function loadFmStats() {
+  try {
+    const d = await api('/forum/stats')
+    document.getElementById('fm-stats').innerHTML = `
+      <div class="stat-card">
+        <div class="stat-label">Chờ duyệt</div>
+        <div class="stat-val c-warn">${d.pending}</div>
+        <div class="stat-sub">bài cần xem xét</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Đã duyệt</div>
+        <div class="stat-val c-success">${d.approved}</div>
+        <div class="stat-sub">bài đăng công khai</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Tổng bài viết</div>
+        <div class="stat-val c-primary">${d.total}</div>
+        <div class="stat-sub">trên toàn diễn đàn</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Bình luận</div>
+        <div class="stat-val" style="color:var(--text)">${d.comments}</div>
+        <div class="stat-sub">tổng số bình luận</div>
+      </div>
+    `
+    // Update sidebar badge
+    const badge = document.getElementById('sb-pending-badge')
+    if (badge) {
+      badge.textContent = d.pending
+      badge.style.display = d.pending > 0 ? 'inline' : 'none'
+    }
+    // Update pending tab count
+    const cnt = document.getElementById('fmt-pending-cnt')
+    if (cnt) cnt.textContent = d.pending > 0 ? d.pending : ''
+  } catch(e) { toast(e.message, 'error') }
+}
+
+async function loadFmPending() {
+  const page = forumModState.pendingPage
+  const tbody = document.getElementById('fm-pending-tbody')
+  if (!tbody) return
+  tbody.innerHTML = '<tr class="loading-row"><td colspan="7"><span class="spinner"></span></td></tr>'
+  try {
+    const d = await api(`/forum/pending?page=${page}&limit=15`)
+    forumModState.pendingTotal = d.total
+    const countEl = document.getElementById('fm-pending-count')
+    if (countEl) countEl.textContent = `${d.total} bài chờ duyệt`
+    if (!d.posts || d.posts.length === 0) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="7" style="text-align:center;padding:32px;color:var(--muted)">🎉 Không có bài viết nào đang chờ duyệt</td></tr>'
+    } else {
+      tbody.innerHTML = d.posts.map(p => {
+        const tagHtml = (p.tags||[]).map(t =>
+          `<span style="font-size:10px;padding:1px 6px;border-radius:10px;background:${t.color}22;color:${t.color};border:1px solid ${t.color}44;white-space:nowrap">${t.icon} ${t.label}</span>`
+        ).join(' ')
+        const reason = p.ai_moderation_reason
+          ? `<span title="${p.ai_moderation_reason}" style="color:var(--warn);font-size:11px;cursor:help">${String(p.ai_moderation_reason).substring(0,40)}${p.ai_moderation_reason.length>40?'…':''}</span>`
+          : '<span style="color:var(--muted)">–</span>'
+        const titleShort = String(p.title).substring(0,55) + (p.title.length>55?'…':'')
+        return `<tr>
+          <td style="color:var(--muted);font-size:11px">#${p.id}</td>
+          <td style="max-width:200px">
+            <div style="font-weight:600;font-size:12.5px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${p.title}">${titleShort}</div>
+          </td>
+          <td class="email-cell" title="${p.author_email}" style="font-size:12px">${p.author_email}</td>
+          <td style="min-width:90px">${tagHtml || '<span style="color:var(--muted)">–</span>'}</td>
+          <td style="max-width:160px">${reason}</td>
+          <td style="white-space:nowrap;font-size:11px;color:var(--muted)">${fmtDateTime(p.created_at)}</td>
+          <td style="white-space:nowrap">
+            <div style="display:flex;gap:6px">
+              <button class="btn btn-ghost btn-sm" onclick="fmPreviewPost(${p.id},'${escAttr(p.title)}','${escAttr(p.content)}','${p.author_email}')">👁 Xem</button>
+              <button class="btn btn-success btn-sm" onclick="fmApprove(${p.id})">✅ Duyệt</button>
+              <button class="btn btn-danger btn-sm" onclick="fmDelete(${p.id},'pending')">🗑 Xóa</button>
+            </div>
+          </td>
+        </tr>`
+      }).join('')
+    }
+    renderPagination('fm-pending-pagination', page, d.total_pages, p=>{forumModState.pendingPage=p;loadFmPending()})
+  } catch(e) { toast(e.message,'error') }
+}
+
+async function loadFmApproved() {
+  const page = forumModState.approvedPage
+  const search = forumModState.approvedSearch
+  const tbody = document.getElementById('fm-approved-tbody')
+  if (!tbody) return
+  tbody.innerHTML = '<tr class="loading-row"><td colspan="8"><span class="spinner"></span></td></tr>'
+  try {
+    const d = await api(`/forum/approved?page=${page}&limit=15&search=${encodeURIComponent(search)}`)
+    forumModState.approvedTotal = d.total
+    const countEl = document.getElementById('fm-approved-count')
+    if (countEl) countEl.textContent = `${d.total} bài đã duyệt`
+    if (!d.posts || d.posts.length === 0) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="8">Không có bài viết nào</td></tr>'
+    } else {
+      tbody.innerHTML = d.posts.map(p => {
+        const tagHtml = (p.tags||[]).map(t =>
+          `<span style="font-size:10px;padding:1px 6px;border-radius:10px;background:${t.color}22;color:${t.color};border:1px solid ${t.color}44;white-space:nowrap">${t.icon} ${t.label}</span>`
+        ).join(' ')
+        const titleShort = String(p.title).substring(0,50) + (p.title.length>50?'…':'')
+        return `<tr>
+          <td style="color:var(--muted);font-size:11px">#${p.id}</td>
+          <td style="max-width:190px">
+            <div style="font-weight:600;font-size:12.5px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${p.title}">${titleShort}</div>
+          </td>
+          <td class="email-cell" title="${p.author_email}" style="font-size:12px">${p.author_email}</td>
+          <td style="min-width:80px">${tagHtml || '<span style="color:var(--muted)">–</span>'}</td>
+          <td style="text-align:center;font-size:12px">${p.like_count||0}</td>
+          <td style="text-align:center;font-size:12px">${p.comment_count||0}</td>
+          <td style="white-space:nowrap;font-size:11px;color:var(--muted)">${fmtDate(p.created_at)}</td>
+          <td>
+            <div style="display:flex;gap:6px">
+              <button class="btn btn-ghost btn-sm" onclick="fmPreviewPost(${p.id},'${escAttr(p.title)}','${escAttr(p.content)}','${p.author_email}')">👁 Xem</button>
+              <button class="btn btn-danger btn-sm" onclick="fmDelete(${p.id},'approved')">🗑 Xóa</button>
+            </div>
+          </td>
+        </tr>`
+      }).join('')
+    }
+    renderPagination('fm-approved-pagination', page, d.total_pages, p=>{forumModState.approvedPage=p;loadFmApproved()})
+  } catch(e) { toast(e.message,'error') }
+}
+
+function escAttr(s) {
+  return String(s||'').replace(/'/g,"\\'").replace(/\n/g,'\\n').substring(0,500)
+}
+
+function fmPreviewPost(id, title, content, email) {
+  document.getElementById('detail-title').textContent = `📄 Bài viết #${id}`
+  document.getElementById('detail-body').innerHTML = `
+    <div style="margin-bottom:12px">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:4px">Tác giả</div>
+      <div style="font-size:13px;color:var(--text)">${email}</div>
+    </div>
+    <div style="margin-bottom:12px">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:4px">Tiêu đề</div>
+      <div style="font-size:15px;font-weight:700;color:var(--text)">${title}</div>
+    </div>
+    <div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Nội dung</div>
+      <div style="font-size:13px;color:var(--text);line-height:1.7;white-space:pre-wrap;background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:8px;padding:12px 14px;max-height:400px;overflow-y:auto">${content}</div>
+    </div>
+  `
+  document.getElementById('detail-modal').style.display = 'flex'
+}
+
+function fmApprove(id) {
+  openConfirm('Duyệt bài viết', `Duyệt và đăng công khai bài viết #${id}?`, async () => {
+    try {
+      await api(`/forum/posts/${id}/approve`, { method: 'POST', body: JSON.stringify({}) })
+      toast('✅ Đã duyệt bài viết', 'success')
+      loadFmStats()
+      loadFmPending()
+    } catch(e) { toast(e.message, 'error') }
+  }, false, 'btn-success')
+}
+
+function fmDelete(id, fromTab) {
+  openConfirm('Xóa bài viết', `Xóa vĩnh viễn bài viết #${id}? Hành động này không thể hoàn tác.`, async () => {
+    try {
+      await api(`/forum/posts/${id}`, { method: 'DELETE' })
+      toast('🗑 Đã xóa bài viết', 'success')
+      loadFmStats()
+      if (fromTab === 'pending') loadFmPending()
+      else loadFmApproved()
+    } catch(e) { toast(e.message, 'error') }
+  }, false, 'btn-danger')
+}
+
+// Load pending count on init for sidebar badge
+async function loadFmSidebarBadge() {
+  try {
+    const d = await api('/forum/stats')
+    const badge = document.getElementById('sb-pending-badge')
+    if (badge) {
+      badge.textContent = d.pending
+      badge.style.display = d.pending > 0 ? 'inline' : 'none'
+    }
+  } catch { /* silent */ }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // PAGINATION HELPER
 // ═══════════════════════════════════════════════════════════════════════════════
 function renderPagination(containerId, page, totalPages, cb) {
@@ -1499,6 +1769,8 @@ function renderPagination(containerId, page, totalPages, cb) {
     try {
       await api('/me')  // verify token still valid
       initApp()
+      // Load pending badge after a short delay
+      setTimeout(loadFmSidebarBadge, 800)
     } catch {
       doLogout()
     }

@@ -338,12 +338,35 @@ function PostCard({ post, userId, isDark, onClick, onDelete, onTagClick }: {
         el.style.background  = isDark ? 'rgba(255,255,255,0.04)' : '#ffffff'
       }}
     >
+      {/* Pending banner — only visible to owner */}
+      {isOwner && (post as any).status === 'pending' && (
+        <div style={{
+          background: 'rgba(245,158,11,0.12)',
+          border: '1px solid rgba(245,158,11,0.35)',
+          borderRadius: '8px', padding: '7px 12px',
+          fontSize: '12px', color: '#f59e0b',
+          display: 'flex', alignItems: 'center', gap: '7px',
+          lineHeight: 1.5,
+        }}>
+          <span>⏳</span>
+          <span>
+            <strong>Đang chờ duyệt</strong> — Bài viết của bạn đang được admin xem xét. 
+            {(post as any).ai_moderation_reason && (
+              <span style={{ color: '#fbbf24' }}> AI nhận xét: {(post as any).ai_moderation_reason}</span>
+            )}
+          </span>
+        </div>
+      )}
+
       {/* Author row */}
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
         <Avatar name={label} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: '15px', fontWeight: 700, color: isDark ? '#e2e8f0' : '#0f172a', marginBottom: '2px', lineHeight: 1.3 }}>
             {post.title}
+            {(post as any).status === 'pending' && (
+              <span style={{ marginLeft: '8px', fontSize: '10px', fontWeight: 700, background: 'rgba(245,158,11,0.15)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)', borderRadius: '10px', padding: '1px 7px', verticalAlign: 'middle' }}>⏳ Chờ duyệt</span>
+            )}
           </div>
           <div style={{ fontSize: '12px', color: isDark ? '#64748b' : '#94a3b8' }}>
             <span style={{ color: isDark ? '#94a3b8' : '#475569', fontWeight: 500 }}>{label}</span>
@@ -494,11 +517,36 @@ function PostDetail({ postId, userId, isDark, authFetch, onBack, onTagClick }: {
 
       {/* Post body */}
       <div style={{ ...card, padding: '22px 24px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+        {/* Pending notice in detail view */}
+        {(post as any).status === 'pending' && (
+          <div style={{
+            background: 'rgba(245,158,11,0.12)',
+            border: '1px solid rgba(245,158,11,0.35)',
+            borderRadius: '8px', padding: '10px 14px',
+            fontSize: '13px', color: '#f59e0b',
+            display: 'flex', alignItems: 'flex-start', gap: '8px', lineHeight: 1.55,
+          }}>
+            <span style={{ fontSize: '16px' }}>⏳</span>
+            <div>
+              <strong>Bài viết đang chờ duyệt</strong>
+              <div style={{ fontSize: '12px', marginTop: '2px', color: '#fbbf24' }}>
+                Nội dung của bạn đang được admin xem xét trước khi hiển thị công khai.
+                {(post as any).ai_moderation_reason && (
+                  <span> AI nhận xét: <em>{(post as any).ai_moderation_reason}</em></span>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
           <Avatar name={label} size={38} />
           <div style={{ flex: 1 }}>
             <h2 style={{ fontSize: '18px', fontWeight: 700, color: isDark ? '#e2e8f0' : '#0f172a', lineHeight: 1.3, marginBottom: '4px' }}>
               {post.title}
+              {(post as any).status === 'pending' && (
+                <span style={{ marginLeft: '8px', fontSize: '11px', fontWeight: 700, background: 'rgba(245,158,11,0.15)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)', borderRadius: '10px', padding: '2px 8px', verticalAlign: 'middle' }}>⏳ Chờ duyệt</span>
+              )}
             </h2>
             <div style={{ fontSize: '12px', color: isDark ? '#64748b' : '#94a3b8' }}>
               <span style={{ fontWeight: 500, color: isDark ? '#94a3b8' : '#475569' }}>{label}</span>
@@ -591,7 +639,7 @@ function CreatePostModal({ isDark, authFetch, onClose, onCreated }: {
   isDark: boolean
   authFetch: (url: string, options?: RequestInit) => Promise<Response>
   onClose: () => void
-  onCreated: (post: ForumPost) => void
+  onCreated: (post: ForumPost, isPending: boolean) => void
 }) {
   const [title, setTitle]       = useState('')
   const [content, setContent]   = useState('')
@@ -643,8 +691,19 @@ function CreatePostModal({ isDark, authFetch, onClose, onCreated }: {
         body: JSON.stringify({ title: title.trim(), content: content.trim(), tag_ids: selectedTagIds }),
       })
       const data = await res.json() as any
-      if (res.ok) { onCreated(data.post); onClose() }
-      else setErr(data.message || 'Lỗi khi tạo bài.')
+      if (res.ok) {
+        const isPending = data.moderation?.status === 'pending'
+        if (isPending) {
+          setErr('')
+          // Show pending notice then close
+          setSubmitting(false)
+          onCreated(data.post, true)
+          onClose()
+          return
+        }
+        onCreated(data.post, false)
+        onClose()
+      } else setErr(data.message || 'Lỗi khi tạo bài.')
     } catch { setErr('Lỗi kết nối.') }
     setSubmitting(false)
   }
@@ -1051,7 +1110,10 @@ export default function ForumPage({ user, authFetch, onLogout, onNavigate, curre
         <CreatePostModal
           isDark={isDark} authFetch={authFetch}
           onClose={() => setShowCreate(false)}
-          onCreated={post => { setPosts(prev => [post as ForumPost, ...prev]); setSelectedPostId(post.id) }}
+          onCreated={(post, isPending) => {
+            setPosts(prev => [post as ForumPost, ...prev])
+            setSelectedPostId(post.id)
+          }}
         />
       )}
 

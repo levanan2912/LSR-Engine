@@ -38,6 +38,82 @@ const FORUM_MODELS = [
   { name: 'gemini-2.5-flash',              maxOutputTokens: 1024 },
 ]
 
+// ─── AI Content Moderation ────────────────────────────────────────────────────
+// Returns { approved: boolean, reason: string }
+async function moderatePost(
+  title: string,
+  content: string,
+  keyPool: string[],
+): Promise<{ approved: boolean; reason: string }> {
+  const systemPrompt = `Bạn là người kiểm duyệt nội dung cho diễn đàn học tập LSR Engine — nơi học sinh chia sẻ về việc học, cảm xúc, tâm lý học tập, kỹ năng, mục tiêu, khó khăn, và kinh nghiệm học tập.
+
+Nhiệm vụ: Xác định xem bài viết có liên quan đến chủ đề học tập, tâm lý học tập, cuộc sống học sinh, hoặc phát triển bản thân không.
+
+ĐƯỢC CHẤP NHẬN (approved=true):
+- Học tập, phương pháp học, kỹ thuật ghi nhớ
+- Tâm lý học sinh: mệt mỏi, áp lực, xao nhãng, cảm xúc
+- Mục tiêu, động lực, thói quen học tập
+- Sức khoẻ thể chất/tinh thần liên quan đến học tập
+- Kinh nghiệm thi cử, ôn thi
+- Câu hỏi về ứng dụng LSR Engine
+- Chia sẻ cuộc sống học sinh nói chung
+- Hỏi ý kiến cộng đồng về vấn đề học tập
+
+KHÔNG ĐƯỢC CHẤP NHẬN (approved=false):
+- Quảng cáo sản phẩm/dịch vụ không liên quan
+- Nội dung thù hận, bạo lực, khiêu dâm
+- Thông tin sai lệch nguy hiểm
+- Spam, nội dung vô nghĩa hoàn toàn
+- Hoàn toàn không liên quan đến học tập hoặc cuộc sống học sinh
+
+LƯU Ý: Hãy khoan dung, ưu tiên chấp nhận nếu có chút liên quan. Chỉ từ chối khi nội dung rõ ràng không phù hợp.
+
+Trả về JSON:
+{"approved": true/false, "reason": "lý do ngắn gọn dưới 100 ký tự nếu không chấp nhận, hoặc rỗng nếu chấp nhận"}`
+
+  const prompt = `Tiêu đề: ${title}\n\nNội dung:\n${content}`
+
+  for (const m of FORUM_MODELS) {
+    for (const key of keyPool) {
+      try {
+        const isGemini25 = /gemini-2\.5-/.test(m.name)
+        const genConfig: Record<string, unknown> = {
+          temperature: 0.1, maxOutputTokens: 200,
+        }
+        if (isGemini25) genConfig.thinkingConfig = { thinkingBudget: 0 }
+
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${m.name}:generateContent?key=${key}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              systemInstruction: { parts: [{ text: systemPrompt }] },
+              contents: [{ role: 'user', parts: [{ text: prompt }] }],
+              generationConfig: genConfig,
+            }),
+          }
+        )
+        if (!res.ok) continue
+        type GResp = { candidates: Array<{ content: { parts: Array<{ text: string }> } }> }
+        const data = await res.json() as GResp
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
+        const jsonStr = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim()
+        const match = jsonStr.match(/\{[\s\S]*\}/)
+        if (!match) continue
+        const parsed = JSON.parse(match[0])
+        return {
+          approved: parsed.approved !== false,
+          reason: String(parsed.reason ?? '').trim().slice(0, 200),
+        }
+      } catch { continue }
+    }
+  }
+
+  // If AI unavailable → approve by default (fail-open)
+  return { approved: true, reason: '' }
+}
+
 // ─── TAGS ─────────────────────────────────────────────────────────────────────
 
 // GET /api/forum/tags — returns all tags ordered by sort_order
@@ -242,34 +318,40 @@ QUY TẮC VIẾT BÀI:
 // ─── POSTS ────────────────────────────────────────────────────────────────────
 
 // GET /api/forum/posts?page=1&limit=20&sort=newest|top&tag=<slug>
+// Shows: approved posts to everyone + owner's own pending posts
 forum.get('/posts', async (c) => {
   const page    = Math.max(1, parseInt(c.req.query('page')  || '1',  10))
   const limit   = Math.min(50, Math.max(1, parseInt(c.req.query('limit') || '20', 10)))
   const offset  = (page - 1) * limit
   const sort    = c.req.query('sort') === 'top' ? 'top' : 'newest'
   const tagSlug = c.req.query('tag') || ''
+  const userId  = c.get('userId')
   const { DB }  = c.env
 
   const orderBy = sort === 'top'
     ? '(SELECT COUNT(*) FROM forum_likes fl WHERE fl.post_id = fp.id) DESC, fp.created_at DESC'
     : 'fp.created_at DESC'
 
+  // Visibility: approved OR (pending AND owned by this user)
+  const visWhere = `(fp.status = 'approved' OR (fp.status = 'pending' AND fp.user_id = ?))`
+
   try {
     let countRow: { total: number } | null
     let rows: D1Result
 
     if (tagSlug) {
-      // Filter by tag slug via junction
       countRow = await DB.prepare(`
         SELECT COUNT(DISTINCT fp.id) as total
         FROM forum_posts fp
         JOIN forum_post_tags fpt ON fpt.post_id = fp.id
         JOIN forum_tags ft ON ft.id = fpt.tag_id AND ft.slug = ?
-      `).bind(tagSlug).first<{ total: number }>()
+        WHERE ${visWhere}
+      `).bind(tagSlug, userId).first<{ total: number }>()
 
       rows = await DB.prepare(`
         SELECT
           fp.id, fp.user_id, fp.title, fp.content, fp.created_at, fp.updated_at,
+          fp.status, fp.ai_moderation_reason,
           u.full_name  AS author_name,
           u.email      AS author_email,
           (SELECT COUNT(*) FROM forum_comments fc WHERE fc.post_id = fp.id) AS comment_count,
@@ -278,25 +360,30 @@ forum.get('/posts', async (c) => {
         JOIN users u ON u.id = fp.user_id
         JOIN forum_post_tags fpt ON fpt.post_id = fp.id
         JOIN forum_tags ft ON ft.id = fpt.tag_id AND ft.slug = ?
+        WHERE ${visWhere}
         GROUP BY fp.id
         ORDER BY ${orderBy}
         LIMIT ? OFFSET ?
-      `).bind(tagSlug, limit, offset).all()
+      `).bind(tagSlug, userId, limit, offset).all()
     } else {
-      countRow = await DB.prepare(`SELECT COUNT(*) as total FROM forum_posts`).first<{ total: number }>()
+      countRow = await DB.prepare(`
+        SELECT COUNT(*) as total FROM forum_posts fp WHERE ${visWhere}
+      `).bind(userId).first<{ total: number }>()
 
       rows = await DB.prepare(`
         SELECT
           fp.id, fp.user_id, fp.title, fp.content, fp.created_at, fp.updated_at,
+          fp.status, fp.ai_moderation_reason,
           u.full_name  AS author_name,
           u.email      AS author_email,
           (SELECT COUNT(*) FROM forum_comments fc WHERE fc.post_id = fp.id) AS comment_count,
           (SELECT COUNT(*) FROM forum_likes   fl WHERE fl.post_id = fp.id) AS like_count
         FROM forum_posts fp
         JOIN users u ON u.id = fp.user_id
+        WHERE ${visWhere}
         ORDER BY ${orderBy}
         LIMIT ? OFFSET ?
-      `).bind(limit, offset).all()
+      `).bind(userId, limit, offset).all()
     }
 
     const total = countRow?.total ?? 0
@@ -332,23 +419,34 @@ forum.get('/posts', async (c) => {
 })
 
 // GET /api/forum/posts/:id  — single post + comments + tags
+// Visible if: approved, OR pending+owner, OR pending+admin
 forum.get('/posts/:id', async (c) => {
   const postId = parseInt(c.req.param('id'), 10)
   if (isNaN(postId)) return c.json({ error: 'invalid_id' }, 400)
+  const userId = c.get('userId')
   const { DB } = c.env
 
   try {
     const post = await DB.prepare(`
       SELECT
         fp.id, fp.user_id, fp.title, fp.content, fp.created_at, fp.updated_at,
+        fp.status, fp.ai_moderation_reason,
         u.full_name AS author_name, u.email AS author_email,
         (SELECT COUNT(*) FROM forum_likes fl WHERE fl.post_id = fp.id) AS like_count
       FROM forum_posts fp
       JOIN users u ON u.id = fp.user_id
       WHERE fp.id = ?
-    `).bind(postId).first()
+    `).bind(postId).first() as any
 
     if (!post) return c.json({ error: 'not_found' }, 404)
+
+    // Access check: pending posts only visible to owner or admin
+    const isOwner = (post as any).user_id === userId
+    const userRow = await DB.prepare(`SELECT role FROM users WHERE id = ?`).bind(userId).first<{ role: string }>()
+    const isAdmin = userRow?.role === 'rootadmin' || userRow?.role === 'subadmin'
+    if ((post as any).status === 'pending' && !isOwner && !isAdmin) {
+      return c.json({ error: 'not_found' }, 404)
+    }
 
     // Tags for this post
     const tagsRows = await DB.prepare(`
@@ -403,9 +501,22 @@ forum.post('/posts', async (c) => {
   if (!content)          return c.json({ error: 'validation', message: 'Nội dung không được để trống' }, 422)
 
   try {
+    // ── AI moderation ──────────────────────────────────────────────────────────
+    const keyPool = parseApiKeys(c.env.GEMINI_API_KEYS, c.env.GEMINI_API_KEY)
+    let postStatus = 'approved'
+    let aiReason = ''
+    if (keyPool.length > 0) {
+      const mod = await moderatePost(title, content, keyPool)
+      if (!mod.approved) {
+        postStatus = 'pending'
+        aiReason   = mod.reason
+      }
+    }
+    // ──────────────────────────────────────────────────────────────────────────
+
     const result = await DB.prepare(
-      `INSERT INTO forum_posts (user_id, title, content) VALUES (?, ?, ?)`
-    ).bind(userId, title, content).run()
+      `INSERT INTO forum_posts (user_id, title, content, status, ai_moderation_reason) VALUES (?, ?, ?, ?, ?)`
+    ).bind(userId, title, content, postStatus, aiReason || null).run()
 
     const postId = result.meta.last_row_id
 
@@ -419,18 +530,22 @@ forum.post('/posts', async (c) => {
 
     const post = await DB.prepare(`
       SELECT fp.id, fp.user_id, fp.title, fp.content, fp.created_at, fp.updated_at,
+             fp.status, fp.ai_moderation_reason,
              u.full_name AS author_name, u.email AS author_email
       FROM forum_posts fp JOIN users u ON u.id = fp.user_id WHERE fp.id = ?
     `).bind(postId).first()
 
-    // Return tags attached
     const tagsRows = await DB.prepare(`
       SELECT ft.id, ft.slug, ft.label, ft.color, ft.icon
       FROM forum_post_tags fpt JOIN forum_tags ft ON ft.id = fpt.tag_id
       WHERE fpt.post_id = ? ORDER BY ft.sort_order
     `).bind(postId).all()
 
-    return c.json({ success: true, post: { ...post, tags: tagsRows.results, like_count: 0, comment_count: 0 } }, 201)
+    return c.json({
+      success: true,
+      post: { ...post, tags: tagsRows.results, like_count: 0, comment_count: 0 },
+      moderation: { status: postStatus, reason: aiReason },
+    }, 201)
   } catch (err: any) {
     return c.json({ error: 'db_error', message: err.message }, 500)
   }
