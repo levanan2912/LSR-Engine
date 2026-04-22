@@ -324,6 +324,7 @@ function LineChart({
   return (
     <div
       onClick={onClick}
+      className="rs-chart-card"
       style={{
         background: 'linear-gradient(160deg, rgba(255,255,255,0.035) 0%, rgba(255,255,255,0.008) 100%)',
         border: `1px solid ${expanded ? color + '55' : 'rgba(255,255,255,0.06)'}`,
@@ -349,9 +350,9 @@ function LineChart({
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '7px', flexWrap: 'wrap' }}>
           <span style={{ fontSize: '14px' }}>{icon}</span>
-          <span style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: '12.5px', fontWeight: 700, color: 'rgba(255,255,255,0.9)' }}>{title}</span>
+          <span className="rs-chart-title" style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: '12.5px', fontWeight: 700, color: 'rgba(255,255,255,0.9)' }}>{title}</span>
           {overlayKey && overlayColor && (
-            <span style={{ fontSize: '9.5px', color: 'rgba(255,255,255,0.35)', fontFamily: 'Space Grotesk, sans-serif', background: `${overlayColor}18`, padding: '1px 6px', borderRadius: '4px', border: `1px solid ${overlayColor}30` }}>
+            <span className="rs-chart-label" style={{ fontSize: '9.5px', color: 'rgba(255,255,255,0.35)', fontFamily: 'Space Grotesk, sans-serif', background: `${overlayColor}18`, padding: '1px 6px', borderRadius: '4px', border: `1px solid ${overlayColor}30` }}>
               ⋯ {overlayLabel ?? overlayKey}
             </span>
           )}
@@ -365,7 +366,7 @@ function LineChart({
               <span style={{ fontSize: '11px', fontWeight: 700, color: trendColor, fontFamily: 'JetBrains Mono, monospace' }}>{trendIcon}</span>
             </>
           )}
-          <span style={{ fontSize: '9px', color: expanded ? color : 'rgba(255,255,255,0.2)', display: 'inline-block', transform: expanded ? 'rotate(180deg)' : 'none', transition: 'all 0.2s' }}>▼</span>
+          <span className="rs-chart-expand" style={{ fontSize: '9px', color: expanded ? color : 'rgba(255,255,255,0.2)', display: 'inline-block', transform: expanded ? 'rotate(180deg)' : 'none', transition: 'all 0.2s' }}>▼</span>
         </div>
       </div>
 
@@ -453,7 +454,7 @@ function LineChart({
             const step = points.length > 15 ? 4 : points.length > 8 ? 2 : 1
             if (i % step !== 0 && i !== points.length - 1) return null
             return (
-              <span key={i} style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', color: 'rgba(255,255,255,0.25)', textAlign: 'center', flex: step > 1 ? undefined : 1, whiteSpace: 'nowrap' }}>
+              <span key={i} className="rs-x-label" style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', color: 'rgba(255,255,255,0.25)', textAlign: 'center', flex: step > 1 ? undefined : 1, whiteSpace: 'nowrap' }}>
                 {p.label}
               </span>
             )
@@ -468,10 +469,10 @@ function LineChart({
           background: `${color}0c`, border: `1px solid ${color}20`, borderRadius: '10px',
           animation: 'insightIn 0.22s ease both',
         }}>
-          <div style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: '10px', fontWeight: 700, color: 'rgba(255,255,255,0.45)', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '6px' }}>
+          <div className="rs-insight-label" style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: '10px', fontWeight: 700, color: 'rgba(255,255,255,0.45)', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '6px' }}>
             💬 Diễn giải
           </div>
-          <p style={{ color: 'rgba(255,255,255,0.82)', fontSize: '12.5px', lineHeight: 1.7, margin: 0, fontFamily: 'Space Grotesk, sans-serif' }}>
+          <p className="rs-insight-text" style={{ color: 'rgba(255,255,255,0.82)', fontSize: '12.5px', lineHeight: 1.7, margin: 0, fontFamily: 'Space Grotesk, sans-serif' }}>
             {insight.split('**').map((seg, i) =>
               i % 2 === 1
                 ? <strong key={i} style={{ color, fontWeight: 700 }}>{seg}</strong>
@@ -509,7 +510,7 @@ function RiskTimeline({ points, animDelay = 0, onClick, expanded }: {
   const hasData = points.some(p => p.riskLevel !== '')
 
   return (
-    <div onClick={onClick} style={{
+    <div onClick={onClick} className="rs-risk-card" style={{
       background: 'linear-gradient(160deg, rgba(255,255,255,0.035) 0%, rgba(255,255,255,0.008) 100%)',
       border: `1px solid ${expanded ? 'rgba(129,140,248,0.45)' : 'rgba(255,255,255,0.06)'}`,
       borderLeft: '3px solid #818cf8',
@@ -520,7 +521,7 @@ function RiskTimeline({ points, animDelay = 0, onClick, expanded }: {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
           <span style={{ fontSize: '14px' }}>🗂️</span>
-          <span style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: '12.5px', fontWeight: 700, color: 'rgba(255,255,255,0.9)' }}>Trạng thái rủi ro theo giai đoạn</span>
+          <span className="rs-chart-title" style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: '12.5px', fontWeight: 700, color: 'rgba(255,255,255,0.9)' }}>Trạng thái rủi ro theo giai đoạn</span>
         </div>
         <span style={{ fontSize: '9px', color: expanded ? '#818cf8' : 'rgba(255,255,255,0.2)', display: 'inline-block', transform: expanded ? 'rotate(180deg)' : 'none', transition: 'all 0.2s' }}>▼</span>
       </div>
@@ -551,22 +552,22 @@ function RiskTimeline({ points, animDelay = 0, onClick, expanded }: {
                 <div key={lvl} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                   <div style={{ width: '9px', height: '9px', borderRadius: '2px', background: RISK_COLOR[lvl] }} />
                   <span style={{ fontSize: '11px', color: RISK_COLOR[lvl], fontFamily: 'Space Grotesk, sans-serif', fontWeight: 600 }}>{RISK_VI[lvl]}</span>
-                  <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.3)', fontFamily: 'JetBrains Mono, monospace' }}>{cnt}</span>
+                  <span className="rs-risk-cnt" style={{ fontSize: '10px', color: 'rgba(255,255,255,0.3)', fontFamily: 'JetBrains Mono, monospace' }}>{cnt}</span>
                 </div>
               )
             })}
           </div>
         </>
       ) : (
-        <div style={{ padding: '12px 0', textAlign: 'center', fontSize: '12px', color: 'rgba(255,255,255,0.25)', fontFamily: 'Space Grotesk, sans-serif' }}>
+        <div className="rs-risk-empty" style={{ padding: '12px 0', textAlign: 'center', fontSize: '12px', color: 'rgba(255,255,255,0.25)', fontFamily: 'Space Grotesk, sans-serif' }}>
           Chưa có dữ liệu báo cáo rủi ro. Dữ liệu sẽ tích lũy sau nhiều phiên phân tích AI.
         </div>
       )}
 
       {expanded && (
         <div style={{ marginTop: '14px', padding: '12px 14px', background: 'rgba(129,140,248,0.07)', border: '1px solid rgba(129,140,248,0.18)', borderRadius: '10px', animation: 'insightIn 0.22s ease both' }}>
-          <div style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: '10px', fontWeight: 700, color: 'rgba(255,255,255,0.45)', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '6px' }}>💬 Diễn giải</div>
-          <p style={{ color: 'rgba(255,255,255,0.82)', fontSize: '12.5px', lineHeight: 1.7, margin: 0, fontFamily: 'Space Grotesk, sans-serif' }}>
+          <div className="rs-insight-label" style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: '10px', fontWeight: 700, color: 'rgba(255,255,255,0.45)', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '6px' }}>💬 Diễn giải</div>
+          <p className="rs-insight-text" style={{ color: 'rgba(255,255,255,0.82)', fontSize: '12.5px', lineHeight: 1.7, margin: 0, fontFamily: 'Space Grotesk, sans-serif' }}>
             {insight.split('**').map((seg, i) =>
               i % 2 === 1
                 ? <strong key={i} style={{ color: '#a5b4fc', fontWeight: 700 }}>{seg}</strong>
@@ -587,15 +588,15 @@ function CorrelationPanel({ points }: { points: ChartPoint[] }) {
   return (
     <div style={{ marginBottom: '10px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-        <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.04)' }} />
-        <span style={{ fontSize: '10px', fontWeight: 700, color: 'rgba(255,255,255,0.35)', fontFamily: 'Space Grotesk, sans-serif', textTransform: 'uppercase', letterSpacing: '0.6px', whiteSpace: 'nowrap' }}>
+        <div className="rs-corr-divider" style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.04)' }} />
+        <span className="rs-corr-label" style={{ fontSize: '10px', fontWeight: 700, color: 'rgba(255,255,255,0.35)', fontFamily: 'Space Grotesk, sans-serif', textTransform: 'uppercase', letterSpacing: '0.6px', whiteSpace: 'nowrap' }}>
           🔗 Mối liên hệ giữa các chỉ số
         </span>
-        <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.04)' }} />
+        <div className="rs-corr-divider" style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.04)' }} />
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '6px' }}>
         {items.map((item, i) => (
-          <div key={i} style={{
+          <div key={i} className="rs-corr-card" style={{
             display: 'flex', gap: '8px', alignItems: 'flex-start',
             padding: '10px 12px', borderRadius: '10px',
             background: item.severity === 'warning' ? 'rgba(248,113,113,0.06)' :
@@ -606,7 +607,7 @@ function CorrelationPanel({ points }: { points: ChartPoint[] }) {
                                   'rgba(255,255,255,0.05)'}`,
           }}>
             <span style={{ fontSize: '13px', flexShrink: 0, marginTop: '1px' }}>{item.emoji}</span>
-            <p style={{ margin: 0, fontSize: '11.5px', lineHeight: 1.6, color: 'rgba(255,255,255,0.72)', fontFamily: 'Space Grotesk, sans-serif' }}>{item.text}</p>
+            <p className="rs-science-text" style={{ margin: 0, fontSize: '11.5px', lineHeight: 1.6, color: 'rgba(255,255,255,0.72)', fontFamily: 'Space Grotesk, sans-serif' }}>{item.text}</p>
           </div>
         ))}
       </div>
@@ -755,11 +756,11 @@ function SciencePanel({ points }: { points: ChartPoint[] }) {
   return (
     <div>
       <div style={{ marginBottom: '16px' }}>
-        <div style={{ fontSize: '10px', fontWeight: 700, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '0.7px', marginBottom: '6px', fontFamily: 'Space Grotesk, sans-serif' }}>
+        <div className="rs-science-header" style={{ fontSize: '10px', fontWeight: 700, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '0.7px', marginBottom: '6px', fontFamily: 'Space Grotesk, sans-serif' }}>
           📚 Kỹ thuật dựa trên nghiên cứu khoa học
         </div>
         {points.length >= 3 && (
-          <div style={{ fontSize: '11.5px', color: 'rgba(255,255,255,0.45)', fontFamily: 'Space Grotesk, sans-serif', lineHeight: 1.6 }}>
+          <div className="rs-science-cat" style={{ fontSize: '11.5px', color: 'rgba(255,255,255,0.45)', fontFamily: 'Space Grotesk, sans-serif', lineHeight: 1.6 }}>
             Dựa trên dữ liệu của bạn, các kỹ thuật <strong style={{ color: '#60a5fa' }}>được ưu tiên hiển thị trước</strong> phù hợp với vấn đề đang gặp.
           </div>
         )}
@@ -771,6 +772,7 @@ function SciencePanel({ points }: { points: ChartPoint[] }) {
           return (
             <div key={i}
               onClick={() => setOpenIdx(isOpen ? null : i)}
+              className="rs-science-tip-bg"
               style={{
                 background: isOpen ? `${tip.categoryColor}08` : 'rgba(255,255,255,0.02)',
                 border: `1px solid ${isOpen ? tip.categoryColor + '35' : 'rgba(255,255,255,0.06)'}`,
@@ -787,7 +789,7 @@ function SciencePanel({ points }: { points: ChartPoint[] }) {
                       <span style={{ fontSize: '9px', color: tip.categoryColor, background: `${tip.categoryColor}15`, border: `1px solid ${tip.categoryColor}28`, borderRadius: '4px', padding: '1px 6px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', textTransform: 'uppercase', letterSpacing: '0.5px', whiteSpace: 'nowrap' }}>{tip.category}</span>
                       {i < 2 && points.length >= 3 && <span style={{ fontSize: '8px', color: '#f59e0b', background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: '4px', padding: '1px 5px', fontWeight: 700 }}>⭐ Ưu tiên</span>}
                     </div>
-                    <div style={{ fontSize: '12.5px', fontWeight: 700, color: 'rgba(255,255,255,0.88)', fontFamily: 'Space Grotesk, sans-serif', lineHeight: 1.3 }}>{tip.title}</div>
+                    <div className="rs-science-tip-title" style={{ fontSize: '12.5px', fontWeight: 700, color: 'rgba(255,255,255,0.88)', fontFamily: 'Space Grotesk, sans-serif', lineHeight: 1.3 }}>{tip.title}</div>
                   </div>
                 </div>
                 <span style={{ fontSize: '9px', color: isOpen ? tip.categoryColor : 'rgba(255,255,255,0.2)', display: 'inline-block', transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'all 0.2s', flexShrink: 0 }}>▼</span>
@@ -795,13 +797,13 @@ function SciencePanel({ points }: { points: ChartPoint[] }) {
 
               {isOpen && (
                 <div style={{ marginTop: '12px', animation: 'insightIn 0.2s ease both' }}>
-                  <p style={{ fontSize: '12.5px', color: 'rgba(255,255,255,0.78)', lineHeight: 1.75, margin: '0 0 12px', fontFamily: 'Space Grotesk, sans-serif' }}>
+                  <p className="rs-science-text" style={{ fontSize: '12.5px', color: 'rgba(255,255,255,0.78)', lineHeight: 1.75, margin: '0 0 12px', fontFamily: 'Space Grotesk, sans-serif' }}>
                     {tip.description}
                   </p>
                   {tip.ifThen && (
                     <div style={{ padding: '10px 13px', background: `${tip.categoryColor}0d`, border: `1px solid ${tip.categoryColor}28`, borderRadius: '9px', marginBottom: '8px' }}>
                       <div style={{ fontSize: '9.5px', fontWeight: 700, color: tip.categoryColor, textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '5px', fontFamily: 'Space Grotesk, sans-serif' }}>⚡ Kế hoạch Nếu–Thì (If–Then)</div>
-                      <p style={{ fontSize: '12px', color: 'rgba(255,255,255,0.75)', lineHeight: 1.65, margin: 0, fontFamily: 'Space Grotesk, sans-serif', fontStyle: 'italic' }}>"{tip.ifThen}"</p>
+                      <p className="rs-science-text" style={{ fontSize: '12px', color: 'rgba(255,255,255,0.75)', lineHeight: 1.65, margin: 0, fontFamily: 'Space Grotesk, sans-serif', fontStyle: 'italic' }}>"{tip.ifThen}"</p>
                     </div>
                   )}
                   {tip.evidence && (
@@ -846,7 +848,7 @@ function SciencePanel({ points }: { points: ChartPoint[] }) {
 function LongTermSummary({ points, historyPoints }: { points: ChartPoint[]; historyPoints: ChartPoint[] }) {
   const allPts = historyPoints.length > points.length ? historyPoints : points
   if (allPts.length < 4) return (
-    <div style={{ textAlign: 'center', padding: '32px 20px', color: 'rgba(255,255,255,0.2)', fontFamily: 'Space Grotesk, sans-serif', fontSize: '12px' }}>
+    <div className="rs-risk-empty" style={{ textAlign: 'center', padding: '32px 20px', color: 'rgba(255,255,255,0.2)', fontFamily: 'Space Grotesk, sans-serif', fontSize: '12px' }}>
       Cần thêm dữ liệu để hiển thị bảng tóm tắt dài hạn.
     </div>
   )
@@ -888,10 +890,10 @@ function LongTermSummary({ points, historyPoints }: { points: ChartPoint[]; hist
     <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
         <div>
-          <div style={{ fontSize: '10px', fontWeight: 700, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '0.7px', marginBottom: '4px', fontFamily: 'Space Grotesk, sans-serif' }}>
+          <div className="rs-ltsum-label" style={{ fontSize: '10px', fontWeight: 700, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '0.7px', marginBottom: '4px', fontFamily: 'Space Grotesk, sans-serif' }}>
             📊 Tóm tắt dài hạn — so sánh với baseline cá nhân
           </div>
-          <div style={{ fontSize: '11.5px', color: 'rgba(255,255,255,0.45)', fontFamily: 'Space Grotesk, sans-serif' }}>
+          <div className="rs-ltsum-text" style={{ fontSize: '11.5px', color: 'rgba(255,255,255,0.45)', fontFamily: 'Space Grotesk, sans-serif' }}>
             Baseline từ {pool.length} phiên · Xu hướng 3 phiên gần: <span style={{ color: trendColor, fontWeight: 700 }}>{trendArrow}</span>
           </div>
         </div>
@@ -903,10 +905,10 @@ function LongTermSummary({ points, historyPoints }: { points: ChartPoint[]; hist
         )}
       </div>
 
-      <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px', overflow: 'hidden', marginBottom: '16px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 80px 70px', gap: '0', borderBottom: '1px solid rgba(255,255,255,0.06)', padding: '8px 14px' }}>
+      <div className="rs-ltsum-card" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px', overflow: 'hidden', marginBottom: '16px' }}>
+        <div className="rs-ltsum-divider" style={{ display: 'grid', gridTemplateColumns: '1fr 80px 80px 70px', gap: '0', borderBottom: '1px solid rgba(255,255,255,0.06)', padding: '8px 14px' }}>
           {['Chỉ số', 'Baseline', '5 phiên gần', 'Thay đổi'].map((h, i) => (
-            <div key={i} style={{ fontSize: '9.5px', fontWeight: 700, color: 'rgba(255,255,255,0.28)', textTransform: 'uppercase', letterSpacing: '0.5px', fontFamily: 'Space Grotesk, sans-serif', textAlign: i > 0 ? 'center' : 'left' }}>{h}</div>
+            <div key={i} className="rs-ltsum-header" style={{ fontSize: '9.5px', fontWeight: 700, color: 'rgba(255,255,255,0.28)', textTransform: 'uppercase', letterSpacing: '0.5px', fontFamily: 'Space Grotesk, sans-serif', textAlign: i > 0 ? 'center' : 'left' }}>{h}</div>
           ))}
         </div>
         {rows.map((row, i) => {
@@ -920,9 +922,9 @@ function LongTermSummary({ points, historyPoints }: { points: ChartPoint[]; hist
               borderBottom: i < rows.length - 1 ? '1px solid rgba(255,255,255,0.04)' : undefined,
               background: i % 2 === 0 ? 'rgba(255,255,255,0.01)' : 'transparent',
             }}>
-              <div style={{ fontSize: '11.5px', color: 'rgba(255,255,255,0.65)', fontFamily: 'Space Grotesk, sans-serif', alignSelf: 'center' }}>{row.label}</div>
-              <div style={{ textAlign: 'center', fontSize: '12px', color: 'rgba(255,255,255,0.4)', fontFamily: 'JetBrains Mono, monospace', alignSelf: 'center' }}>{row.baseline}{row.suffix}</div>
-              <div style={{ textAlign: 'center', fontSize: '12.5px', fontWeight: 700, color: 'rgba(255,255,255,0.85)', fontFamily: 'JetBrains Mono, monospace', alignSelf: 'center' }}>{row.recent}{row.suffix}</div>
+              <div className="rs-ltsum-row-date" style={{ fontSize: '11.5px', color: 'rgba(255,255,255,0.65)', fontFamily: 'Space Grotesk, sans-serif', alignSelf: 'center' }}>{row.label}</div>
+              <div className="rs-ltsum-row-val" style={{ textAlign: 'center', fontSize: '12px', color: 'rgba(255,255,255,0.4)', fontFamily: 'JetBrains Mono, monospace', alignSelf: 'center' }}>{row.baseline}{row.suffix}</div>
+              <div className="rs-ltsum-val-bold" style={{ textAlign: 'center', fontSize: '12.5px', fontWeight: 700, color: 'rgba(255,255,255,0.85)', fontFamily: 'JetBrains Mono, monospace', alignSelf: 'center' }}>{row.recent}{row.suffix}</div>
               <div style={{ textAlign: 'center', fontSize: '12px', fontWeight: 700, color: deltaColor, fontFamily: 'JetBrains Mono, monospace', alignSelf: 'center' }}>{row.delta > 0 ? '+' : ''}{row.delta.toFixed(1)}</div>
             </div>
           )
@@ -949,7 +951,7 @@ function LongTermSummary({ points, historyPoints }: { points: ChartPoint[]; hist
       )}
 
       <div style={{ marginBottom: '8px' }}>
-        <div style={{ fontSize: '10px', fontWeight: 700, color: 'rgba(255,255,255,0.28)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px', fontFamily: 'Space Grotesk, sans-serif' }}>
+        <div className="rs-ltsum-header" style={{ fontSize: '10px', fontWeight: 700, color: 'rgba(255,255,255,0.28)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px', fontFamily: 'Space Grotesk, sans-serif' }}>
           Lịch sử gần nhất ({Math.min(10, allPts.length)} phiên)
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
@@ -965,14 +967,14 @@ function LongTermSummary({ points, historyPoints }: { points: ChartPoint[]; hist
                 border: `1px solid ${flags?.outlier ? 'rgba(245,158,11,0.15)' : 'rgba(255,255,255,0.04)'}`,
                 borderRadius: '7px', alignItems: 'center',
               }}>
-                <span style={{ fontSize: '9.5px', fontFamily: 'JetBrains Mono, monospace', color: 'rgba(255,255,255,0.35)' }}>{p.label}</span>
+                <span className="rs-ltsum-row-val" style={{ fontSize: '9.5px', fontFamily: 'JetBrains Mono, monospace', color: 'rgba(255,255,255,0.35)' }}>{p.label}</span>
                 <div style={{ display: 'flex', gap: '3px' }}>
                   {p.annotation && <span style={{ fontSize: '9px' }}>{p.annotation.split(' ')[0]}</span>}
                   {flags?.outlier && <span style={{ fontSize: '8px', color: '#fbbf24', background: 'rgba(245,158,11,0.12)', borderRadius: '3px', padding: '0 4px', fontFamily: 'Space Grotesk, sans-serif' }}>ngoại lệ</span>}
                   {flags?.isRecent && <span style={{ fontSize: '8px', color: '#60a5fa', background: 'rgba(96,165,250,0.08)', borderRadius: '3px', padding: '0 4px', fontFamily: 'Space Grotesk, sans-serif' }}>mới</span>}
                 </div>
                 <span style={{ fontSize: '10.5px', fontFamily: 'JetBrains Mono, monospace', color: focusColor, fontWeight: 600, textAlign: 'center' }}>{p.focus.toFixed(1)}</span>
-                <span style={{ fontSize: '10.5px', fontFamily: 'JetBrains Mono, monospace', color: 'rgba(255,255,255,0.35)', textAlign: 'center' }}>{p.distractions.toFixed(0)}x</span>
+                <span className="rs-ltsum-row-val" style={{ fontSize: '10.5px', fontFamily: 'JetBrains Mono, monospace', color: 'rgba(255,255,255,0.35)', textAlign: 'center' }}>{p.distractions.toFixed(0)}x</span>
                 <span style={{ fontSize: '10.5px', fontFamily: 'JetBrains Mono, monospace', color: p.goalRate === 100 ? '#34d399' : 'rgba(255,255,255,0.35)', textAlign: 'center' }}>{p.goalRate.toFixed(0)}%</span>
                 <span style={{ fontSize: '10px', fontFamily: 'JetBrains Mono, monospace', color: p.dropout >= 4 ? '#f87171' : 'rgba(255,255,255,0.3)', textAlign: 'center' }}>💔{p.dropout.toFixed(1)}</span>
               </div>
@@ -1081,30 +1083,30 @@ export default function ResultSlide({ report, analyzing, entries, onClose, theme
   ]
 
   return (
-    <div style={{
+    <div data-theme={isDark ? 'dark' : 'light'} style={{
       position: 'fixed', inset: 0, zIndex: 2000,
-      background: 'rgba(2,6,23,0.82)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)',
+      background: isDark ? 'rgba(2,6,23,0.82)' : 'rgba(15,23,42,0.55)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)',
       display: 'flex', alignItems: 'flex-end',
       opacity: visible ? 1 : 0, transition: 'opacity 0.28s ease',
     }}>
       <div style={{
         width: '100%', maxHeight: '94vh',
-        background: 'linear-gradient(180deg, #0b1020 0%, #070919 100%)',
+        background: isDark ? 'linear-gradient(180deg, #0b1020 0%, #070919 100%)' : 'linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%)',
         borderRadius: '22px 22px 0 0',
-        border: '1px solid rgba(255,255,255,0.07)', borderBottom: 'none',
-        boxShadow: '0 -14px 70px rgba(0,0,0,0.75)',
+        border: isDark ? '1px solid rgba(255,255,255,0.07)' : '1px solid rgba(0,0,0,0.10)', borderBottom: 'none',
+        boxShadow: isDark ? '0 -14px 70px rgba(0,0,0,0.75)' : '0 -14px 70px rgba(0,0,0,0.18)',
         transform: visible ? 'translateY(0)' : 'translateY(100%)',
         transition: 'transform 0.5s cubic-bezier(0.32,0.72,0,1)',
         display: 'flex', flexDirection: 'column', overflow: 'hidden',
       }}>
 
         {/* ── Fixed header ── */}
-        <div style={{ padding: '12px 18px 10px', flexShrink: 0, borderBottom: '1px solid rgba(255,255,255,0.045)' }}>
-          <div style={{ width: '32px', height: '3px', borderRadius: '2px', background: 'rgba(255,255,255,0.1)', margin: '0 auto 12px' }} />
+        <div style={{ padding: '12px 18px 10px', flexShrink: 0, borderBottom: isDark ? '1px solid rgba(255,255,255,0.045)' : '1px solid rgba(0,0,0,0.08)' }}>
+          <div style={{ width: '32px', height: '3px', borderRadius: '2px', background: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.12)', margin: '0 auto 12px' }} />
 
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
             <div>
-              <div style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: '9.5px', fontWeight: 600, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '5px' }}>
+              <div style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: '9.5px', fontWeight: 600, color: isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.4)', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '5px' }}>
                 📡 LSR Engine · Kết quả phân tích
               </div>
               {analyzing
@@ -1118,12 +1120,12 @@ export default function ResultSlide({ report, analyzing, entries, onClose, theme
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
               {tabMode === 'charts' && (
-                <div style={{ display: 'flex', gap: '2px', background: 'rgba(255,255,255,0.04)', borderRadius: '9px', padding: '3px' }}>
+                <div style={{ display: 'flex', gap: '2px', background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.05)', borderRadius: '9px', padding: '3px' }}>
                   {([['session', 'Phiên'], ['week', 'Tuần'], ['month', 'Tháng']] as [ViewMode, string][]).map(([m, l]) => (
                     <button key={m} onClick={e => { e.stopPropagation(); setViewMode(m) }} style={{
                       padding: '4px 10px', borderRadius: '6px', border: 'none',
                       background: viewMode === m ? 'rgba(129,140,248,0.22)' : 'transparent',
-                      color: viewMode === m ? '#a5b4fc' : 'rgba(255,255,255,0.3)',
+                      color: viewMode === m ? '#818cf8' : (isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.35)'),
                       fontSize: '10.5px', fontWeight: 600, cursor: 'pointer',
                       fontFamily: 'Space Grotesk, sans-serif', transition: 'all 0.14s',
                       boxShadow: viewMode === m ? 'inset 0 0 0 1px rgba(129,140,248,0.25)' : 'none',
@@ -1133,24 +1135,24 @@ export default function ResultSlide({ report, analyzing, entries, onClose, theme
               )}
               <button onClick={onClose} aria-label="Đóng" style={{
                 width: '32px', height: '32px', borderRadius: '50%', flexShrink: 0,
-                background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.09)',
-                color: 'rgba(255,255,255,0.55)', fontSize: '17px', cursor: 'pointer',
+                background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.06)', border: isDark ? '1px solid rgba(255,255,255,0.09)' : '1px solid rgba(0,0,0,0.12)',
+                color: isDark ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.5)', fontSize: '17px', cursor: 'pointer',
                 display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.14s',
               }}>×</button>
             </div>
           </div>
 
           {/* ── Tab bar ── */}
-          <div style={{ display: 'flex', gap: '3px', marginTop: '10px', background: 'rgba(255,255,255,0.03)', borderRadius: '10px', padding: '3px' }}>
+          <div style={{ display: 'flex', gap: '3px', marginTop: '10px', background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.04)', borderRadius: '10px', padding: '3px' }}>
             {TABS.map(tab => (
               <button key={tab.id} onClick={() => { setTabMode(tab.id); setExpandedIdx(null) }} style={{
                 flex: 1, padding: '6px 8px', borderRadius: '7px', border: 'none',
-                background: tabMode === tab.id ? 'rgba(255,255,255,0.09)' : 'transparent',
-                color: tabMode === tab.id ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.3)',
+                background: tabMode === tab.id ? (isDark ? 'rgba(255,255,255,0.09)' : 'rgba(255,255,255,0.85)') : 'transparent',
+                color: tabMode === tab.id ? (isDark ? 'rgba(255,255,255,0.92)' : 'rgba(0,0,0,0.85)') : (isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.35)'),
                 fontSize: '11px', fontWeight: tabMode === tab.id ? 700 : 500, cursor: 'pointer',
                 fontFamily: 'Space Grotesk, sans-serif', transition: 'all 0.15s',
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px',
-                boxShadow: tabMode === tab.id ? '0 1px 6px rgba(0,0,0,0.3)' : 'none',
+                boxShadow: tabMode === tab.id ? (isDark ? '0 1px 6px rgba(0,0,0,0.3)' : '0 1px 6px rgba(0,0,0,0.08)') : 'none',
               }}>
                 <span>{tab.icon}</span>
                 <span>{tab.label}</span>
@@ -1167,12 +1169,12 @@ export default function ResultSlide({ report, analyzing, entries, onClose, theme
             <>
               {points.length > 0 && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px', flexWrap: 'wrap' }}>
-                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '3px 10px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px' }}>
-                    <span style={{ fontSize: '9.5px', color: 'rgba(255,255,255,0.35)', fontFamily: 'Space Grotesk, sans-serif' }}>
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '3px 10px', background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)', border: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(0,0,0,0.08)', borderRadius: '16px' }}>
+                    <span style={{ fontSize: '9.5px', color: isDark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.4)', fontFamily: 'Space Grotesk, sans-serif' }}>
                       {viewMode === 'session' ? `${points.length} phiên gần nhất` : viewMode === 'week' ? `${points.length} tuần` : `${points.length} tháng`}
                     </span>
                   </div>
-                  <span style={{ fontSize: '9.5px', color: 'rgba(255,255,255,0.2)', fontFamily: 'Space Grotesk, sans-serif' }}>
+                  <span style={{ fontSize: '9.5px', color: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.3)', fontFamily: 'Space Grotesk, sans-serif' }}>
                     Nhấn vào biểu đồ để xem phân tích · ● = sự kiện đặc biệt
                   </span>
                 </div>
@@ -1186,19 +1188,19 @@ export default function ResultSlide({ report, analyzing, entries, onClose, theme
                   </div>
                 </>
               ) : (
-                <div style={{ textAlign: 'center', padding: '48px 20px', color: 'rgba(255,255,255,0.25)', fontFamily: 'Space Grotesk, sans-serif', fontSize: '13px' }}>
+                <div style={{ textAlign: 'center', padding: '48px 20px', color: isDark ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.3)', fontFamily: 'Space Grotesk, sans-serif', fontSize: '13px' }}>
                   Chưa có dữ liệu để hiển thị biểu đồ.<br />
                   <span style={{ fontSize: '11px', opacity: 0.6 }}>Tiếp tục nhập nhật ký để xem xu hướng.</span>
                 </div>
               )}
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: '26px 0 20px' }}>
-                <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.045)' }} />
+                <div style={{ flex: 1, height: '1px', background: isDark ? 'rgba(255,255,255,0.045)' : 'rgba(0,0,0,0.08)' }} />
                 <div style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '5px 13px', background: 'rgba(129,140,248,0.07)', border: '1px solid rgba(129,140,248,0.15)', borderRadius: '18px' }}>
                   <span style={{ fontSize: '11px' }}>📡</span>
                   <span style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: '10.5px', fontWeight: 600, color: '#a5b4fc' }}>Báo cáo AI</span>
                 </div>
-                <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.045)' }} />
+                <div style={{ flex: 1, height: '1px', background: isDark ? 'rgba(255,255,255,0.045)' : 'rgba(0,0,0,0.08)' }} />
               </div>
 
               <AnalysisReportComponent report={report} loading={analyzing} isDark={isDark} />
@@ -1217,7 +1219,7 @@ export default function ResultSlide({ report, analyzing, entries, onClose, theme
 
           <div style={{ margin: '20px 0 0', padding: '10px 14px', background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.14)', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span style={{ fontSize: '14px' }}>📊</span>
-            <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)', fontFamily: 'Space Grotesk, sans-serif', lineHeight: 1.5 }}>
+            <span style={{ fontSize: '12px', color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.55)', fontFamily: 'Space Grotesk, sans-serif', lineHeight: 1.5 }}>
               Xem <strong style={{ color: '#a5b4fc' }}>Tiến trình học tập</strong> đầy đủ (baseline, xu hướng ngắn/dài hạn) tại trang <strong style={{ color: '#a5b4fc' }}>Lịch sử</strong>.
             </span>
           </div>
@@ -1225,13 +1227,13 @@ export default function ResultSlide({ report, analyzing, entries, onClose, theme
           <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'center' }}>
             <button onClick={onClose} style={{
               padding: '10px 32px', borderRadius: '11px',
-              background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)',
-              color: 'rgba(255,255,255,0.5)', fontSize: '12.5px',
+              background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)', border: isDark ? '1px solid rgba(255,255,255,0.09)' : '1px solid rgba(0,0,0,0.10)',
+              color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)', fontSize: '12.5px',
               fontFamily: 'Space Grotesk, sans-serif', fontWeight: 600,
               cursor: 'pointer', transition: 'all 0.14s',
             }}
-              onMouseEnter={e => { (e.target as HTMLElement).style.background = 'rgba(255,255,255,0.08)' }}
-              onMouseLeave={e => { (e.target as HTMLElement).style.background = 'rgba(255,255,255,0.04)' }}
+              onMouseEnter={e => { (e.target as HTMLElement).style.background = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }}
+              onMouseLeave={e => { (e.target as HTMLElement).style.background = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)' }}
             >← Quay lại nhập liệu</button>
           </div>
         </div>
@@ -1241,6 +1243,55 @@ export default function ResultSlide({ report, analyzing, entries, onClose, theme
         @keyframes badgePop   { from { transform: scale(0.65); opacity: 0 } to { transform: scale(1); opacity: 1 } }
         @keyframes aiBlink    { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.3;transform:scale(0.6)} }
         @keyframes insightIn  { from { opacity: 0; transform: translateY(-5px) } to { opacity: 1; transform: translateY(0) } }
+
+        /* ── Light mode overrides for chart sub-components ── */
+        [data-theme="light"] .rs-chart-card {
+          background: rgba(0,0,0,0.02) !important;
+          border-color: rgba(0,0,0,0.08) !important;
+        }
+        [data-theme="light"] .rs-chart-title { color: rgba(0,0,0,0.82) !important; }
+        [data-theme="light"] .rs-chart-label { color: rgba(0,0,0,0.4) !important; }
+        [data-theme="light"] .rs-chart-expand { color: rgba(0,0,0,0.25) !important; }
+        [data-theme="light"] .rs-insight-label { color: rgba(0,0,0,0.45) !important; }
+        [data-theme="light"] .rs-insight-text  { color: rgba(0,0,0,0.75) !important; }
+        [data-theme="light"] .rs-x-label { color: rgba(0,0,0,0.28) !important; }
+        [data-theme="light"] .rs-corr-card {
+          background: rgba(0,0,0,0.02) !important;
+          border-color: rgba(0,0,0,0.06) !important;
+        }
+        [data-theme="light"] .rs-corr-label { color: rgba(0,0,0,0.35) !important; }
+        [data-theme="light"] .rs-corr-divider { background: rgba(0,0,0,0.05) !important; }
+        [data-theme="light"] .rs-science-card {
+          background: rgba(0,0,0,0.02) !important;
+          border-color: rgba(0,0,0,0.06) !important;
+        }
+        [data-theme="light"] .rs-science-text { color: rgba(0,0,0,0.70) !important; }
+        [data-theme="light"] .rs-science-cat  { color: rgba(0,0,0,0.35) !important; }
+        [data-theme="light"] .rs-science-header { color: rgba(0,0,0,0.35) !important; }
+        [data-theme="light"] .rs-science-tip-bg {
+          background: rgba(0,0,0,0.02) !important;
+          border-color: rgba(0,0,0,0.06) !important;
+        }
+        [data-theme="light"] .rs-science-tip-title { color: rgba(0,0,0,0.82) !important; }
+        [data-theme="light"] .rs-ltsum-card {
+          background: rgba(0,0,0,0.02) !important;
+          border-color: rgba(0,0,0,0.07) !important;
+        }
+        [data-theme="light"] .rs-ltsum-label { color: rgba(0,0,0,0.35) !important; }
+        [data-theme="light"] .rs-ltsum-text  { color: rgba(0,0,0,0.65) !important; }
+        [data-theme="light"] .rs-ltsum-header { color: rgba(0,0,0,0.28) !important; }
+        [data-theme="light"] .rs-ltsum-row-date { color: rgba(0,0,0,0.65) !important; }
+        [data-theme="light"] .rs-ltsum-row-val  { color: rgba(0,0,0,0.40) !important; }
+        [data-theme="light"] .rs-ltsum-val-bold  { color: rgba(0,0,0,0.82) !important; }
+        [data-theme="light"] .rs-ltsum-divider { background: rgba(0,0,0,0.05) !important; border-color: rgba(0,0,0,0.06) !important; }
+        [data-theme="light"] .rs-risk-card {
+          background: rgba(0,0,0,0.02) !important;
+          border-color: rgba(0,0,0,0.08) !important;
+        }
+        [data-theme="light"] .rs-risk-label { color: rgba(0,0,0,0.3) !important; }
+        [data-theme="light"] .rs-risk-cnt   { color: rgba(0,0,0,0.3) !important; }
+        [data-theme="light"] .rs-risk-empty { color: rgba(0,0,0,0.2) !important; }
+        [data-theme="light"] .rs-grid-line { stroke: rgba(0,0,0,0.05) !important; }
       `}</style>
     </div>
   )
