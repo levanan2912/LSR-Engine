@@ -562,6 +562,7 @@ export default function Dashboard({ user, authFetch, onLogout, onNavigate, curre
           entries={entries}
           onClose={() => setShowResult(false)}
           theme={theme}
+          authFetch={authFetch}
         />
       )}
 
