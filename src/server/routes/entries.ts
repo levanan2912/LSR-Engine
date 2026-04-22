@@ -305,8 +305,8 @@ entries.post('/', async (c) => {
         INSERT OR REPLACE INTO analysis_reports
           (user_id, entry_id, report_date, risk_level, key_signals, short_term_forecast,
            primary_risk_driver, intervention_strategy, action_plan_48h,
-           monitoring_protocol, raw_ai_response, analyzed_by, key_name)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           raw_ai_response, analyzed_by, key_name)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         userId, entryId, date,
         analysis.risk_level,
@@ -315,7 +315,6 @@ entries.post('/', async (c) => {
         analysis.primary_risk_driver ?? '',
         analysis.intervention_strategy ?? '',
         JSON.stringify(analysis.action_plan_48h ?? []),
-        analysis.monitoring_protocol ?? '',   // deprecated field — default '' để tránh undefined
         analysis.raw_ai_response ?? '',
         analysis.analyzed_by ?? null,
         analysis.key_name ?? null,
@@ -419,8 +418,8 @@ entries.post('/:id/analysis', async (c) => {
       INSERT OR REPLACE INTO analysis_reports
         (user_id, entry_id, report_date, risk_level, key_signals, short_term_forecast,
          primary_risk_driver, intervention_strategy, action_plan_48h,
-         monitoring_protocol, raw_ai_response, analyzed_by, key_name)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         raw_ai_response, analyzed_by, key_name)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
       userId, entryId, entry.session_date,
       analysis.risk_level,
@@ -429,7 +428,6 @@ entries.post('/:id/analysis', async (c) => {
       analysis.primary_risk_driver ?? '',
       analysis.intervention_strategy ?? '',
       JSON.stringify(analysis.action_plan_48h ?? []),
-      analysis.monitoring_protocol ?? '',   // deprecated field — default '' để tránh undefined
       analysis.raw_ai_response ?? '',
       analysis.analyzed_by ?? null,
       analysis.key_name ?? null,
@@ -607,7 +605,8 @@ entries.get('/history', async (c) => {
         r.primary_risk_driver,
         r.intervention_strategy,
         r.action_plan_48h,
-        r.monitoring_protocol,
+        r.analyzed_by,
+        r.key_name,
         r.raw_ai_response,
         r.created_at      AS report_created_at
 
@@ -640,7 +639,8 @@ entries.get('/history', async (c) => {
         primary_risk_driver: string
         intervention_strategy: string
         action_plan_48h: string[]
-        monitoring_protocol: string
+        analyzed_by: string | null
+        key_name: string | null
         raw_ai_response: string | null
         created_at: string
       } | null
@@ -674,7 +674,8 @@ entries.get('/history', async (c) => {
           primary_risk_driver:   (row.primary_risk_driver  || '') as string,
           intervention_strategy: (row.intervention_strategy || '') as string,
           action_plan_48h:       parseArr(row.action_plan_48h),
-          monitoring_protocol:   (row.monitoring_protocol  || '') as string,
+          analyzed_by:           row.analyzed_by as string | null,
+          key_name:              row.key_name as string | null,
           raw_ai_response:       row.raw_ai_response as string | null,
           created_at:            row.report_created_at as string,
         },

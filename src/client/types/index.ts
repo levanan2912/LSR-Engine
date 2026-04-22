@@ -36,11 +36,7 @@ export interface AnalysisReport {
 
   // Narrative fields
   short_term_forecast: string
-  primary_risk_driver: string
   intervention_strategy: string
-
-  // Monitoring (deprecated — no longer generated)
-  monitoring_protocol?: string | null
 
   // Raw AI response (for debug/audit)
   raw_ai_response?: string | null
@@ -72,13 +68,11 @@ export interface SessionReport {
   risk_level: 'Stable' | 'Fluctuating' | 'High Risk'
   key_signals: string[]
   short_term_forecast: string
-  primary_risk_driver: string
   intervention_strategy: string
   action_plan_48h: string[]
-  monitoring_protocol?: string | null
+  analyzed_by: string | null
+  key_name: string | null
   raw_ai_response?: string | null
-  analyzed_by?: string | null
-  key_name?: string | null
   created_at: string
 }
 

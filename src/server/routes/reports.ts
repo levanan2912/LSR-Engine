@@ -10,7 +10,7 @@ reports.use('*', authMiddleware)
 const parseJson = (v: unknown, fallback: unknown[] = []) => { try { return JSON.parse(v as string) } catch { return fallback } }
 
 function parseRow(r: Record<string, unknown>) {
-  return { ...r, key_signals: parseJson(r.key_signals), action_plan_48h: parseJson(r.action_plan_48h), monitoring_protocol: r.monitoring_protocol || '', raw_ai_response: r.raw_ai_response || null }
+  return { ...r, key_signals: parseJson(r.key_signals), action_plan_48h: parseJson(r.action_plan_48h), raw_ai_response: r.raw_ai_response || null }
 }
 
 // GET /api/reports/latest

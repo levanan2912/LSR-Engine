@@ -188,12 +188,21 @@ export default function AnalysisReportComponent({ report, loading }: Props) {
   const theme = RISK_THEME[report.risk_level as keyof typeof RISK_THEME] ?? RISK_THEME['Stable']
   const meta = getModelMeta(report.analyzed_by ?? undefined)
 
-  const ts = report.created_at
-    ? new Date(report.created_at).toLocaleString('vi-VN', {
+  // created_at từ SQLite: "2026-04-22 13:46:00" (UTC, không có T/Z suffix)
+  // Phải normalize thành ISO format trước khi parse để tránh browser interpret sai
+  const ts = (() => {
+    if (!report.created_at) return report.report_date
+    // Thêm 'T' và 'Z' nếu chuỗi chưa có để đảm bảo parse đúng UTC
+    const iso = report.created_at.includes('T')
+      ? (report.created_at.endsWith('Z') ? report.created_at : report.created_at + 'Z')
+      : report.created_at.replace(' ', 'T') + 'Z'
+    try {
+      return new Date(iso).toLocaleString('vi-VN', {
         day: '2-digit', month: '2-digit', year: 'numeric',
         hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Ho_Chi_Minh',
       })
-    : report.report_date
+    } catch { return report.report_date }
+  })()
 
   const riskColor = theme.text
 
