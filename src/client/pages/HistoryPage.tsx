@@ -100,10 +100,10 @@ function DaySummaryBar({ sessions }: { sessions: SessionWithReport[] }) {
 function ReportPanel({ report, riskLevel, isDark = true }: { report: SessionReport; riskLevel: string; isDark?: boolean }) {
   const [checkedItems, setCheckedItems] = useState<Record<number, boolean>>({})
   const riskColor = riskLevel === 'High Risk' ? '#f87171' : riskLevel === 'Fluctuating' ? '#fbbf24' : '#34d399'
-  const signalLabelColor  = isDark ? '#fbbf24' : '#b45309'
-  const signalBg          = isDark ? 'rgba(251,191,36,0.06)'  : 'rgba(180,83,9,0.06)'
-  const signalBorder      = isDark ? '1px solid rgba(251,191,36,0.12)' : '1px solid rgba(180,83,9,0.15)'
-  const signalNumColor    = isDark ? '#fbbf24' : '#92400e'
+  const signalLabelColor  = isDark ? '#fbbf24' : '#d97706'
+  const signalBg          = isDark ? 'rgba(251,191,36,0.06)'  : 'rgba(251,191,36,0.12)'
+  const signalBorder      = isDark ? '1px solid rgba(251,191,36,0.12)' : '1px solid rgba(245,158,11,0.30)'
+  const signalNumColor    = isDark ? '#fbbf24' : '#d97706'
   const cardBg            = isDark ? 'rgba(255,255,255,0.02)'  : 'rgba(0,0,0,0.025)'
   const actionBorderColor = isDark ? 'rgba(255,255,255,0.08)'  : 'rgba(0,0,0,0.10)'
   const actionFaintColor  = isDark ? '#475569' : '#94a3b8'
@@ -119,7 +119,8 @@ function ReportPanel({ report, riskLevel, isDark = true }: { report: SessionRepo
       {report.key_signals.length > 0 && (
         <div style={{
           background: cardBg,
-          border: `1px solid ${isDark ? 'rgba(251,191,36,0.25)' : 'rgba(180,83,9,0.22)'}`,
+          border: `1px solid ${isDark ? 'rgba(251,191,36,0.25)' : 'rgba(245,158,11,0.35)'}`,
+          background: isDark ? cardBg : 'rgba(251,191,36,0.06)',
           borderLeft: `3px solid ${signalLabelColor}`,
           borderRadius: '10px', padding: '12px 14px',
         }}>

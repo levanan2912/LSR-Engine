@@ -93,7 +93,7 @@ function buildPoints(entries: DailyEntry[], mode: ViewMode, historyEntries?: Dai
       hours: Number(e.study_hours ?? 0),
       distractions: e.distraction_count ?? 0,
       goalRate: e.goal_achieved ? 100 : 0,
-      riskLevel: '',
+      riskLevel: e.risk_level ?? '',
       count: 1,
     })))
   }
@@ -111,7 +111,12 @@ function buildPoints(entries: DailyEntry[], mode: ViewMode, historyEntries?: Dai
       const n = grp.length
       const avg = (fn: (e: DailyEntry) => number) => grp.reduce((s, e) => s + fn(e), 0) / n
       const goalRate = (grp.filter(e => e.goal_achieved).length / n) * 100
-      // Dominant risk for aggregated periods (placeholder — no report data per session in entries list)
+      // Dominant risk: pick worst risk level in the group
+      const riskRank: Record<string, number> = { 'High Risk': 3, 'Fluctuating': 2, 'Stable': 1, '': 0 }
+      const dominantRisk = grp.reduce((worst, e) => {
+        const lvl = e.risk_level ?? ''
+        return (riskRank[lvl] ?? 0) > (riskRank[worst] ?? 0) ? lvl : worst
+      }, '')
       return {
         label: k,
         focus:        avg(e => e.focus_level ?? 0),
@@ -119,7 +124,7 @@ function buildPoints(entries: DailyEntry[], mode: ViewMode, historyEntries?: Dai
         hours:        avg(e => Number(e.study_hours ?? 0)),
         distractions: avg(e => e.distraction_count ?? 0),
         goalRate,
-        riskLevel: '',
+        riskLevel: dominantRisk,
         count: n,
       }
     })
@@ -1098,6 +1103,7 @@ export default function ResultSlide({ report, analyzing, entries, onClose, theme
           distraction_count: s.distraction_count, distracting_factors: s.distracting_factors,
           goal_achieved: s.goal_achieved, emotional_state: s.emotional_state,
           dropout_feeling: s.dropout_feeling, created_at: s.created_at ?? '',
+          risk_level: s.report?.risk_level ?? '',   // lấy risk_level từ AI report của session
         }))
         setHistoryEntries(converted)
       }

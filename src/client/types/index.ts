@@ -19,6 +19,7 @@ export interface DailyEntry {
   emotional_state: string
   dropout_feeling: number
   created_at: string
+  risk_level?: string         // from AI report: 'Stable'|'Fluctuating'|'High Risk'|''
 }
 
 export interface AnalysisReport {
