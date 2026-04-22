@@ -631,17 +631,372 @@ function RiskBanner({ report }: { report: AnalysisReport | null }) {
   )
 }
 
+
+// ─── Science Tab Data ────────────────────────────────────────────────────────────
+interface ScienceTip {
+  category: string
+  categoryColor: string
+  categoryIcon: string
+  title: string
+  description: string
+  ifThen?: string
+  evidence?: string
+}
+
+const SCIENCE_TIPS: ScienceTip[] = [
+  {
+    category: 'Môi trường học tập',
+    categoryColor: '#34d399',
+    categoryIcon: '🏠',
+    title: 'Tạo "đường băng" học tập cố định',
+    description: 'Một không gian học tập dành riêng trở thành tín hiệu tâm lý tự động cho chế độ tập trung — giúp não bộ chuyển trạng thái nhanh hơn và sâu hơn.',
+    ifThen: 'Nếu tôi ngồi vào góc học cố định → tôi bắt đầu học ngay, không mở mạng xã hội.',
+    evidence: 'Bloomsbury Academic — Why Students Lose Focus',
+  },
+  {
+    category: 'Điện thoại & Xao nhãng',
+    categoryColor: '#f87171',
+    categoryIcon: '📵',
+    title: 'Để điện thoại ở phòng khác (kể cả khi tắt)',
+    description: 'Chỉ cần điện thoại nằm trên bàn cũng giảm khả năng ghi nhớ và xử lý thông tin — não liên tục dùng một phần năng lượng để "kháng cự" xao nhãng tiềm năng.',
+    ifThen: 'Nếu điện thoại thông báo → tôi sẽ không mở cho đến khi hoàn thành chương này.',
+    evidence: 'PMC/NIH — Attention & Smartphone Proximity, 2024',
+  },
+  {
+    category: 'Cấu trúc thời gian',
+    categoryColor: '#f59e0b',
+    categoryIcon: '⏱️',
+    title: 'Phương pháp Pomodoro',
+    description: '25 phút tập trung + 5 phút nghỉ giúp vỏ não trước trán phục hồi, duy trì năng lượng nhận thức trong thời gian dài mà không suy giảm chất lượng.',
+    ifThen: 'Nếu tôi cảm thấy mệt sau 25 phút → tôi nghỉ đúng 5 phút rồi bắt đầu chu kỳ mới.',
+    evidence: 'Global Journal of Advanced Research (GJAR) — Cognitive Load',
+  },
+  {
+    category: 'Kỹ thuật học sâu',
+    categoryColor: '#818cf8',
+    categoryIcon: '🧠',
+    title: 'Active Recall thay vì đọc lại',
+    description: 'Flashcard, tự kiểm tra, giảng lại cho người khác — giúp ký ức đi vào lưu trữ dài hạn hiệu quả hơn đọc lại tài liệu nhiều lần.',
+    ifThen: 'Sau mỗi phần học → tôi đóng tài liệu và viết ra tất cả những gì nhớ được.',
+    evidence: 'Latham & Locke — Goal Setting Theory',
+  },
+  {
+    category: 'Giải lao chủ động',
+    categoryColor: '#60a5fa',
+    categoryIcon: '🚶',
+    title: 'Đi bộ 20 phút thay vì lướt điện thoại',
+    description: 'Đi bộ tăng lưu lượng oxy lên não khoảng 20%, cải thiện tâm trạng và khả năng tập trung. Ngủ thiếu chỉ 1 đêm cắt giảm hiệu suất chú ý tới 20–30%.',
+    ifThen: 'Khi giải lao → tôi đi bộ hoặc kéo giãn cơ, không mở mạng xã hội.',
+    evidence: 'Harvard/Action-Based Learning — Exercise & Brain Function',
+  },
+  {
+    category: 'Mục tiêu & Kế hoạch',
+    categoryColor: '#a78bfa',
+    categoryIcon: '🎯',
+    title: 'Implementation Intentions (Nếu–Thì)',
+    description: 'Kế hoạch "Nếu–Thì" cụ thể tăng xác suất thực hiện thói quen tốt lên gấp 2–3 lần so với mục tiêu chung chung như "tôi sẽ học chăm hơn".',
+    ifThen: 'Nếu đến 8 giờ tối → tôi lấy sách và ngồi vào bàn học (không cần "cảm hứng").',
+    evidence: 'PMC/NIH — Implementation Intentions Meta-analysis',
+  },
+  {
+    category: 'Chunking & Tư duy',
+    categoryColor: '#22d3ee',
+    categoryIcon: '🧩',
+    title: 'Chia nhỏ nhiệm vụ (Chunking)',
+    description: 'Khi bị quá tải, chia bài học thành từng bước nhỏ có thể hoàn thành trong 5–10 phút giúp tái lập tự tin và duy trì động lực học.',
+    ifThen: 'Nếu nhiệm vụ có vẻ quá lớn → tôi viết ra 3 bước nhỏ nhất cần làm ngay bây giờ.',
+    evidence: 'ScienceDirect — Self-Regulation in Academic Contexts',
+  },
+  {
+    category: 'Chánh niệm & Sức bền',
+    categoryColor: '#f472b6',
+    categoryIcon: '🧘',
+    title: 'Thiền chánh niệm tái cấu trúc mạng chú ý',
+    description: '10–15 phút thiền mỗi ngày tái cấu trúc mạng lưới chú ý não, giúp chuyển trạng thái nhanh hơn sau khi bị xao nhãng và giảm "mind-wandering" trong giờ học.',
+    ifThen: 'Nếu tôi nhận ra mình đang xao nhãng → tôi hít thở sâu 3 lần và quay lại bài.',
+    evidence: 'Sciety/OSF — Mindfulness & Attention Networks',
+  },
+]
+
+const SCIENCE_REFS = [
+  { label: 'PMC/NIH — Smartphone & Attention 2024', url: 'https://pmc.ncbi.nlm.nih.gov/articles/PMC10956610/' },
+  { label: 'GJAR — Cognitive Load & Noise', url: 'https://www.gjar.org/publishpaper/vol12issue2/s1218.pdf' },
+  { label: 'Bloomsbury — Why Students Lose Focus', url: 'https://www.bloomsbury.com/uk/discover/bloomsbury-academic/blog/featured/why-students-lose-focus-and-how-to-quickly-improve-their-attention/' },
+  { label: 'Sciety/OSF — Mindfulness & Learning', url: 'https://sciety.org/articles/activity/10.31234/osf.io/v5xgr_v1' },
+  { label: 'ĐHKH Huế — Nghiên cứu học tập', url: 'https://csdlkhoahoc.hueuni.edu.vn/data/2023/7/TRUC_QUYNH_SO_6_-_2023.pdf' },
+  { label: 'Hànội Mới — 70% học sinh xao nhãng', url: 'https://hanoimoi.vn/70-hoc-sinh-xao-nhang-trong-gio-hoc-150122.html' },
+  { label: 'ScienceDirect — Self-Regulation Academic', url: 'https://www.sciencedirect.com/science/article/pii/S2452301120300456' },
+]
+
+// ─── Science Panel ────────────────────────────────────────────────────────────────
+function SciencePanel({ points }: { points: ChartPoint[] }) {
+  const [openIdx, setOpenIdx] = useState<number | null>(null)
+
+  const sortedTips = useMemo(() => {
+    if (points.length < 2) return SCIENCE_TIPS
+    const avgDistr = points.reduce((s, p) => s + p.distractions, 0) / points.length
+    const avgFocus = points.reduce((s, p) => s + p.focus, 0) / points.length
+    const avgDrop  = points.reduce((s, p) => s + p.dropout, 0) / points.length
+    const avgGoal  = points.reduce((s, p) => s + p.goalRate, 0) / points.length
+
+    const scores: Record<string, number> = {
+      'Điện thoại & Xao nhãng': avgDistr > 3 ? 10 : 0,
+      'Môi trường học tập':     avgFocus < 3 ? 8 : 0,
+      'Cấu trúc thời gian':     avgDrop > 3 ? 7 : 0,
+      'Mục tiêu & Kế hoạch':   avgGoal < 60 ? 6 : 0,
+      'Chunking & Tư duy':      avgDrop > 3.5 ? 5 : 0,
+      'Kỹ thuật học sâu':       avgGoal < 80 ? 4 : 0,
+      'Giải lao chủ động':      avgFocus < 3.5 ? 3 : 0,
+      'Chánh niệm & Sức bền':   avgDistr > 2 ? 2 : 0,
+    }
+    return [...SCIENCE_TIPS].sort((a, b) => (scores[b.category] ?? 0) - (scores[a.category] ?? 0))
+  }, [points])
+
+  return (
+    <div>
+      <div style={{ marginBottom: '16px' }}>
+        <div style={{ fontSize: '10px', fontWeight: 700, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '0.7px', marginBottom: '6px', fontFamily: 'Space Grotesk, sans-serif' }}>
+          📚 Kỹ thuật dựa trên nghiên cứu khoa học
+        </div>
+        {points.length >= 3 && (
+          <div style={{ fontSize: '11.5px', color: 'rgba(255,255,255,0.45)', fontFamily: 'Space Grotesk, sans-serif', lineHeight: 1.6 }}>
+            Dựa trên dữ liệu của bạn, các kỹ thuật <strong style={{ color: '#60a5fa' }}>được ưu tiên hiển thị trước</strong> phù hợp với vấn đề đang gặp.
+          </div>
+        )}
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '7px', marginBottom: '20px' }}>
+        {sortedTips.map((tip, i) => {
+          const isOpen = openIdx === i
+          return (
+            <div key={i}
+              onClick={() => setOpenIdx(isOpen ? null : i)}
+              style={{
+                background: isOpen ? `${tip.categoryColor}08` : 'rgba(255,255,255,0.02)',
+                border: `1px solid ${isOpen ? tip.categoryColor + '35' : 'rgba(255,255,255,0.06)'}`,
+                borderLeft: `3px solid ${tip.categoryColor}`,
+                borderRadius: '12px', padding: '12px 14px',
+                cursor: 'pointer', transition: 'all 0.18s ease',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '9px', flex: 1, minWidth: 0 }}>
+                  <span style={{ fontSize: '17px', flexShrink: 0 }}>{tip.categoryIcon}</span>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '7px', flexWrap: 'wrap', marginBottom: '2px' }}>
+                      <span style={{ fontSize: '9px', color: tip.categoryColor, background: `${tip.categoryColor}15`, border: `1px solid ${tip.categoryColor}28`, borderRadius: '4px', padding: '1px 6px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', textTransform: 'uppercase', letterSpacing: '0.5px', whiteSpace: 'nowrap' }}>{tip.category}</span>
+                      {i < 2 && points.length >= 3 && <span style={{ fontSize: '8px', color: '#f59e0b', background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: '4px', padding: '1px 5px', fontWeight: 700 }}>⭐ Ưu tiên</span>}
+                    </div>
+                    <div style={{ fontSize: '12.5px', fontWeight: 700, color: 'rgba(255,255,255,0.88)', fontFamily: 'Space Grotesk, sans-serif', lineHeight: 1.3 }}>{tip.title}</div>
+                  </div>
+                </div>
+                <span style={{ fontSize: '9px', color: isOpen ? tip.categoryColor : 'rgba(255,255,255,0.2)', display: 'inline-block', transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'all 0.2s', flexShrink: 0 }}>▼</span>
+              </div>
+
+              {isOpen && (
+                <div style={{ marginTop: '12px', animation: 'insightIn 0.2s ease both' }}>
+                  <p style={{ fontSize: '12.5px', color: 'rgba(255,255,255,0.78)', lineHeight: 1.75, margin: '0 0 12px', fontFamily: 'Space Grotesk, sans-serif' }}>
+                    {tip.description}
+                  </p>
+                  {tip.ifThen && (
+                    <div style={{ padding: '10px 13px', background: `${tip.categoryColor}0d`, border: `1px solid ${tip.categoryColor}28`, borderRadius: '9px', marginBottom: '8px' }}>
+                      <div style={{ fontSize: '9.5px', fontWeight: 700, color: tip.categoryColor, textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '5px', fontFamily: 'Space Grotesk, sans-serif' }}>⚡ Kế hoạch Nếu–Thì (If–Then)</div>
+                      <p style={{ fontSize: '12px', color: 'rgba(255,255,255,0.75)', lineHeight: 1.65, margin: 0, fontFamily: 'Space Grotesk, sans-serif', fontStyle: 'italic' }}>"{tip.ifThen}"</p>
+                    </div>
+                  )}
+                  {tip.evidence && (
+                    <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.25)', fontFamily: 'JetBrains Mono, monospace' }}>
+                      📖 Nguồn: {tip.evidence}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '16px' }}>
+        <div style={{ fontSize: '10px', fontWeight: 700, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '0.7px', marginBottom: '10px', fontFamily: 'Space Grotesk, sans-serif' }}>
+          🔗 Tài liệu tham khảo
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+          {SCIENCE_REFS.map((ref, i) => (
+            <a key={i} href={ref.url} target="_blank" rel="noopener noreferrer" style={{
+              display: 'flex', alignItems: 'center', gap: '7px',
+              padding: '7px 10px', background: 'rgba(255,255,255,0.02)',
+              border: '1px solid rgba(255,255,255,0.05)', borderRadius: '8px',
+              textDecoration: 'none', transition: 'all 0.15s',
+              color: 'rgba(255,255,255,0.5)', fontSize: '11.5px', fontFamily: 'Space Grotesk, sans-serif',
+            }}
+              onMouseEnter={e => { const el = e.currentTarget; el.style.background = 'rgba(96,165,250,0.07)'; el.style.borderColor = 'rgba(96,165,250,0.2)'; el.style.color = '#93c5fd' }}
+              onMouseLeave={e => { const el = e.currentTarget; el.style.background = 'rgba(255,255,255,0.02)'; el.style.borderColor = 'rgba(255,255,255,0.05)'; el.style.color = 'rgba(255,255,255,0.5)' }}
+            >
+              <span style={{ fontSize: '10px', opacity: 0.5 }}>↗</span>
+              {ref.label}
+            </a>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Long-term Summary Table ──────────────────────────────────────────────────────
+function LongTermSummary({ points, historyPoints }: { points: ChartPoint[]; historyPoints: ChartPoint[] }) {
+  const allPts = historyPoints.length > points.length ? historyPoints : points
+  if (allPts.length < 4) return (
+    <div style={{ textAlign: 'center', padding: '32px 20px', color: 'rgba(255,255,255,0.2)', fontFamily: 'Space Grotesk, sans-serif', fontSize: '12px' }}>
+      Cần thêm dữ liệu để hiển thị bảng tóm tắt dài hạn.
+    </div>
+  )
+
+  const pool = allPts.slice(0, Math.max(1, allPts.length - 3))
+  const bFocus = pool.reduce((s, p) => s + p.focus, 0) / pool.length
+  const bDropout = pool.reduce((s, p) => s + p.dropout, 0) / pool.length
+  const bGoal = pool.reduce((s, p) => s + p.goalRate, 0) / pool.length
+  const bDistr = pool.reduce((s, p) => s + p.distractions, 0) / pool.length
+  const stdFocus = Math.sqrt(pool.reduce((s, p) => s + (p.focus - bFocus) ** 2, 0) / Math.max(pool.length - 1, 1))
+
+  const withFlags = allPts.map((p, i) => ({
+    ...p,
+    outlier: Math.abs(p.focus - bFocus) > stdFocus * 1.5,
+    isRecent: i >= allPts.length - 5,
+  }))
+
+  const recent5 = allPts.slice(-5)
+  const r5Focus = recent5.reduce((s, p) => s + p.focus, 0) / recent5.length
+  const r5Goal  = recent5.reduce((s, p) => s + p.goalRate, 0) / recent5.length
+  const r5Drop  = recent5.reduce((s, p) => s + p.dropout, 0) / recent5.length
+  const r5Distr = recent5.reduce((s, p) => s + p.distractions, 0) / recent5.length
+
+  const last3focus = allPts.slice(-3).map(p => p.focus)
+  const trendDir3 = last3focus.length >= 2 ? last3focus[last3focus.length - 1] - last3focus[0] : 0
+  const trendArrow = trendDir3 > 0.3 ? '↑' : trendDir3 < -0.3 ? '↓' : '→'
+  const trendColor = trendDir3 > 0.3 ? '#34d399' : trendDir3 < -0.3 ? '#f87171' : '#64748b'
+
+  const rows = [
+    { label: 'Tập trung (Focus)', baseline: bFocus.toFixed(1), recent: r5Focus.toFixed(1), delta: r5Focus - bFocus, suffix: '/5', inverse: false },
+    { label: 'Cảm giác bỏ cuộc', baseline: bDropout.toFixed(1), recent: r5Drop.toFixed(1), delta: r5Drop - bDropout, suffix: '/5', inverse: true },
+    { label: 'Hoàn thành mục tiêu', baseline: bGoal.toFixed(0), recent: r5Goal.toFixed(0), delta: r5Goal - bGoal, suffix: '%', inverse: false },
+    { label: 'Xao nhãng TB', baseline: bDistr.toFixed(1), recent: r5Distr.toFixed(1), delta: r5Distr - bDistr, suffix: ' lần', inverse: true },
+  ]
+
+  const outlierCount = withFlags.filter(p => p.outlier).length
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
+        <div>
+          <div style={{ fontSize: '10px', fontWeight: 700, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '0.7px', marginBottom: '4px', fontFamily: 'Space Grotesk, sans-serif' }}>
+            📊 Tóm tắt dài hạn — so sánh với baseline cá nhân
+          </div>
+          <div style={{ fontSize: '11.5px', color: 'rgba(255,255,255,0.45)', fontFamily: 'Space Grotesk, sans-serif' }}>
+            Baseline từ {pool.length} phiên · Xu hướng 3 phiên gần: <span style={{ color: trendColor, fontWeight: 700 }}>{trendArrow}</span>
+          </div>
+        </div>
+        {outlierCount > 0 && (
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '4px 10px', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.22)', borderRadius: '8px' }}>
+            <span style={{ fontSize: '10px' }}>⚡</span>
+            <span style={{ fontSize: '10.5px', color: '#fbbf24', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif' }}>{outlierCount} ngoại lệ phát hiện</span>
+          </div>
+        )}
+      </div>
+
+      <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px', overflow: 'hidden', marginBottom: '16px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 80px 70px', gap: '0', borderBottom: '1px solid rgba(255,255,255,0.06)', padding: '8px 14px' }}>
+          {['Chỉ số', 'Baseline', '5 phiên gần', 'Thay đổi'].map((h, i) => (
+            <div key={i} style={{ fontSize: '9.5px', fontWeight: 700, color: 'rgba(255,255,255,0.28)', textTransform: 'uppercase', letterSpacing: '0.5px', fontFamily: 'Space Grotesk, sans-serif', textAlign: i > 0 ? 'center' : 'left' }}>{h}</div>
+          ))}
+        </div>
+        {rows.map((row, i) => {
+          const posGood = !row.inverse ? row.delta > 0.15 : row.delta < -0.15
+          const negBad  = !row.inverse ? row.delta < -0.15 : row.delta > 0.15
+          const deltaColor = posGood ? '#34d399' : negBad ? '#f87171' : '#64748b'
+          return (
+            <div key={i} style={{
+              display: 'grid', gridTemplateColumns: '1fr 80px 80px 70px',
+              gap: '0', padding: '10px 14px',
+              borderBottom: i < rows.length - 1 ? '1px solid rgba(255,255,255,0.04)' : undefined,
+              background: i % 2 === 0 ? 'rgba(255,255,255,0.01)' : 'transparent',
+            }}>
+              <div style={{ fontSize: '11.5px', color: 'rgba(255,255,255,0.65)', fontFamily: 'Space Grotesk, sans-serif', alignSelf: 'center' }}>{row.label}</div>
+              <div style={{ textAlign: 'center', fontSize: '12px', color: 'rgba(255,255,255,0.4)', fontFamily: 'JetBrains Mono, monospace', alignSelf: 'center' }}>{row.baseline}{row.suffix}</div>
+              <div style={{ textAlign: 'center', fontSize: '12.5px', fontWeight: 700, color: 'rgba(255,255,255,0.85)', fontFamily: 'JetBrains Mono, monospace', alignSelf: 'center' }}>{row.recent}{row.suffix}</div>
+              <div style={{ textAlign: 'center', fontSize: '12px', fontWeight: 700, color: deltaColor, fontFamily: 'JetBrains Mono, monospace', alignSelf: 'center' }}>{row.delta > 0 ? '+' : ''}{row.delta.toFixed(1)}</div>
+            </div>
+          )
+        })}
+      </div>
+
+      {outlierCount > 0 && (
+        <div style={{ background: 'rgba(245,158,11,0.04)', border: '1px solid rgba(245,158,11,0.14)', borderRadius: '10px', padding: '12px 14px', marginBottom: '14px' }}>
+          <div style={{ fontSize: '10px', fontWeight: 700, color: '#fbbf24', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '8px', fontFamily: 'Space Grotesk, sans-serif' }}>
+            ⚡ Phiên ngoại lệ (lệch &gt;1.5σ so với baseline)
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
+            {withFlags.filter(p => p.outlier).map((p, i) => (
+              <div key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '3px 9px', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.22)', borderRadius: '6px' }}>
+                <span style={{ fontSize: '10px', color: '#fbbf24', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}>{p.label}</span>
+                <span style={{ fontSize: '9.5px', color: 'rgba(255,255,255,0.35)', fontFamily: 'JetBrains Mono, monospace' }}>focus={p.focus.toFixed(1)}</span>
+              </div>
+            ))}
+          </div>
+          <p style={{ margin: '8px 0 0', fontSize: '11px', color: 'rgba(255,255,255,0.4)', lineHeight: 1.6, fontFamily: 'Space Grotesk, sans-serif' }}>
+            Hệ thống không tính phiên ngoại lệ vào xu hướng dài hạn trừ khi xuất hiện ≥3 lần liên tiếp.
+          </p>
+        </div>
+      )}
+
+      <div style={{ marginBottom: '8px' }}>
+        <div style={{ fontSize: '10px', fontWeight: 700, color: 'rgba(255,255,255,0.28)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px', fontFamily: 'Space Grotesk, sans-serif' }}>
+          Lịch sử gần nhất ({Math.min(10, allPts.length)} phiên)
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+          {allPts.slice(-10).map((p, i) => {
+            const flags = withFlags.find(f => f.label === p.label)
+            const focusDelta = p.focus - bFocus
+            const focusColor = focusDelta > 0.5 ? '#34d399' : focusDelta < -0.5 ? '#f87171' : '#64748b'
+            return (
+              <div key={i} style={{
+                display: 'grid', gridTemplateColumns: '52px 1fr 60px 60px 60px 50px',
+                gap: '4px', padding: '5px 10px',
+                background: flags?.outlier ? 'rgba(245,158,11,0.05)' : 'rgba(255,255,255,0.01)',
+                border: `1px solid ${flags?.outlier ? 'rgba(245,158,11,0.15)' : 'rgba(255,255,255,0.04)'}`,
+                borderRadius: '7px', alignItems: 'center',
+              }}>
+                <span style={{ fontSize: '9.5px', fontFamily: 'JetBrains Mono, monospace', color: 'rgba(255,255,255,0.35)' }}>{p.label}</span>
+                <div style={{ display: 'flex', gap: '3px' }}>
+                  {p.annotation && <span style={{ fontSize: '9px' }}>{p.annotation.split(' ')[0]}</span>}
+                  {flags?.outlier && <span style={{ fontSize: '8px', color: '#fbbf24', background: 'rgba(245,158,11,0.12)', borderRadius: '3px', padding: '0 4px', fontFamily: 'Space Grotesk, sans-serif' }}>ngoại lệ</span>}
+                  {flags?.isRecent && <span style={{ fontSize: '8px', color: '#60a5fa', background: 'rgba(96,165,250,0.08)', borderRadius: '3px', padding: '0 4px', fontFamily: 'Space Grotesk, sans-serif' }}>mới</span>}
+                </div>
+                <span style={{ fontSize: '10.5px', fontFamily: 'JetBrains Mono, monospace', color: focusColor, fontWeight: 600, textAlign: 'center' }}>{p.focus.toFixed(1)}</span>
+                <span style={{ fontSize: '10.5px', fontFamily: 'JetBrains Mono, monospace', color: 'rgba(255,255,255,0.35)', textAlign: 'center' }}>{p.distractions.toFixed(0)}x</span>
+                <span style={{ fontSize: '10.5px', fontFamily: 'JetBrains Mono, monospace', color: p.goalRate === 100 ? '#34d399' : 'rgba(255,255,255,0.35)', textAlign: 'center' }}>{p.goalRate.toFixed(0)}%</span>
+                <span style={{ fontSize: '10px', fontFamily: 'JetBrains Mono, monospace', color: p.dropout >= 4 ? '#f87171' : 'rgba(255,255,255,0.3)', textAlign: 'center' }}>💔{p.dropout.toFixed(1)}</span>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Main Component ─────────────────────────────────────────────────────────────
+type TabMode = 'charts' | 'summary' | 'science'
+
 export default function ResultSlide({ report, analyzing, entries, onClose, theme = 'dark', authFetch }: Props) {
   const [visible,        setVisible]       = useState(false)
   const [viewMode,       setViewMode]      = useState<ViewMode>('session')
+  const [tabMode,        setTabMode]       = useState<TabMode>('charts')
   const [expandedIdx,    setExpandedIdx]   = useState<number | null>(null)
   const [historyEntries, setHistoryEntries] = useState<DailyEntry[]>([])
 
   useEffect(() => { const t = setTimeout(() => setVisible(true), 30); return () => clearTimeout(t) }, [])
   useEffect(() => { document.body.style.overflow = 'hidden'; return () => { document.body.style.overflow = '' } }, [])
 
-  // Fetch history for week/month chart views
   useEffect(() => {
     if (!authFetch || historyEntries.length > 0) return
     authFetch('/api/entries/history?limit=90').then(r => r.ok ? r.json() : null).then(data => {
@@ -661,6 +1016,7 @@ export default function ResultSlide({ report, analyzing, entries, onClose, theme
   }, [authFetch])
 
   const points = useMemo(() => buildPoints(entries, viewMode, historyEntries), [entries, viewMode, historyEntries])
+  const weekPoints = useMemo(() => buildPoints(entries, 'week', historyEntries), [entries, historyEntries])
 
   const riskPoints = useMemo<ChartPoint[]>(() =>
     points.map((p, i) => ({
@@ -717,6 +1073,12 @@ export default function ResultSlide({ report, analyzing, entries, onClose, theme
     },
   ]
 
+  const TABS: Array<{ id: TabMode; label: string; icon: string }> = [
+    { id: 'charts',  label: 'Biểu đồ',  icon: '📈' },
+    { id: 'summary', label: 'Tóm tắt',  icon: '📊' },
+    { id: 'science', label: 'Khoa học', icon: '📚' },
+  ]
+
   return (
     <div style={{
       position: 'fixed', inset: 0, zIndex: 2000,
@@ -736,8 +1098,7 @@ export default function ResultSlide({ report, analyzing, entries, onClose, theme
       }}>
 
         {/* ── Fixed header ── */}
-        <div style={{ padding: '12px 18px 12px', flexShrink: 0, borderBottom: '1px solid rgba(255,255,255,0.045)' }}>
-          {/* Drag handle */}
+        <div style={{ padding: '12px 18px 10px', flexShrink: 0, borderBottom: '1px solid rgba(255,255,255,0.045)' }}>
           <div style={{ width: '32px', height: '3px', borderRadius: '2px', background: 'rgba(255,255,255,0.1)', margin: '0 auto 12px' }} />
 
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
@@ -755,20 +1116,20 @@ export default function ResultSlide({ report, analyzing, entries, onClose, theme
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
-              {/* View mode */}
-              <div style={{ display: 'flex', gap: '2px', background: 'rgba(255,255,255,0.04)', borderRadius: '9px', padding: '3px' }}>
-                {([['session', 'Phiên'], ['week', 'Tuần'], ['month', 'Tháng']] as [ViewMode, string][]).map(([m, l]) => (
-                  <button key={m} onClick={e => { e.stopPropagation(); setViewMode(m) }} style={{
-                    padding: '4px 10px', borderRadius: '6px', border: 'none',
-                    background: viewMode === m ? 'rgba(129,140,248,0.22)' : 'transparent',
-                    color: viewMode === m ? '#a5b4fc' : 'rgba(255,255,255,0.3)',
-                    fontSize: '10.5px', fontWeight: 600, cursor: 'pointer',
-                    fontFamily: 'Space Grotesk, sans-serif', transition: 'all 0.14s',
-                    boxShadow: viewMode === m ? 'inset 0 0 0 1px rgba(129,140,248,0.25)' : 'none',
-                  }}>{l}</button>
-                ))}
-              </div>
-              {/* Close */}
+              {tabMode === 'charts' && (
+                <div style={{ display: 'flex', gap: '2px', background: 'rgba(255,255,255,0.04)', borderRadius: '9px', padding: '3px' }}>
+                  {([['session', 'Phiên'], ['week', 'Tuần'], ['month', 'Tháng']] as [ViewMode, string][]).map(([m, l]) => (
+                    <button key={m} onClick={e => { e.stopPropagation(); setViewMode(m) }} style={{
+                      padding: '4px 10px', borderRadius: '6px', border: 'none',
+                      background: viewMode === m ? 'rgba(129,140,248,0.22)' : 'transparent',
+                      color: viewMode === m ? '#a5b4fc' : 'rgba(255,255,255,0.3)',
+                      fontSize: '10.5px', fontWeight: 600, cursor: 'pointer',
+                      fontFamily: 'Space Grotesk, sans-serif', transition: 'all 0.14s',
+                      boxShadow: viewMode === m ? 'inset 0 0 0 1px rgba(129,140,248,0.25)' : 'none',
+                    }}>{l}</button>
+                  ))}
+                </div>
+              )}
               <button onClick={onClose} aria-label="Đóng" style={{
                 width: '32px', height: '32px', borderRadius: '50%', flexShrink: 0,
                 background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.09)',
@@ -777,55 +1138,82 @@ export default function ResultSlide({ report, analyzing, entries, onClose, theme
               }}>×</button>
             </div>
           </div>
+
+          {/* ── Tab bar ── */}
+          <div style={{ display: 'flex', gap: '3px', marginTop: '10px', background: 'rgba(255,255,255,0.03)', borderRadius: '10px', padding: '3px' }}>
+            {TABS.map(tab => (
+              <button key={tab.id} onClick={() => { setTabMode(tab.id); setExpandedIdx(null) }} style={{
+                flex: 1, padding: '6px 8px', borderRadius: '7px', border: 'none',
+                background: tabMode === tab.id ? 'rgba(255,255,255,0.09)' : 'transparent',
+                color: tabMode === tab.id ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.3)',
+                fontSize: '11px', fontWeight: tabMode === tab.id ? 700 : 500, cursor: 'pointer',
+                fontFamily: 'Space Grotesk, sans-serif', transition: 'all 0.15s',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px',
+                boxShadow: tabMode === tab.id ? '0 1px 6px rgba(0,0,0,0.3)' : 'none',
+              }}>
+                <span>{tab.icon}</span>
+                <span>{tab.label}</span>
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* ── Scrollable body ── */}
         <div style={{ overflowY: 'auto', flex: 1, padding: '16px 18px 44px' }}>
 
-          {/* Info strip */}
-          {points.length > 0 && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px', flexWrap: 'wrap' }}>
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '3px 10px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px' }}>
-                <span style={{ fontSize: '9.5px', color: 'rgba(255,255,255,0.35)', fontFamily: 'Space Grotesk, sans-serif' }}>
-                  {viewMode === 'session' ? `${points.length} phiên gần nhất` : viewMode === 'week' ? `${points.length} tuần` : `${points.length} tháng`}
-                </span>
-              </div>
-              <span style={{ fontSize: '9.5px', color: 'rgba(255,255,255,0.2)', fontFamily: 'Space Grotesk, sans-serif' }}>
-                Nhấn vào biểu đồ để xem phân tích · ● = sự kiện đặc biệt
-              </span>
-            </div>
-          )}
-
-          {points.length > 0 ? (
+          {/* ═══ TAB: CHARTS ═══ */}
+          {tabMode === 'charts' && (
             <>
-              {/* Correlation panel — shown above charts */}
-              <CorrelationPanel points={points} />
+              {points.length > 0 && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '3px 10px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px' }}>
+                    <span style={{ fontSize: '9.5px', color: 'rgba(255,255,255,0.35)', fontFamily: 'Space Grotesk, sans-serif' }}>
+                      {viewMode === 'session' ? `${points.length} phiên gần nhất` : viewMode === 'week' ? `${points.length} tuần` : `${points.length} tháng`}
+                    </span>
+                  </div>
+                  <span style={{ fontSize: '9.5px', color: 'rgba(255,255,255,0.2)', fontFamily: 'Space Grotesk, sans-serif' }}>
+                    Nhấn vào biểu đồ để xem phân tích · ● = sự kiện đặc biệt
+                  </span>
+                </div>
+              )}
 
-              {/* 5 Charts vertical */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {charts.map(c => <React.Fragment key={c.id}>{c.node}</React.Fragment>)}
+              {points.length > 0 ? (
+                <>
+                  <CorrelationPanel points={points} />
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {charts.map(c => <React.Fragment key={c.id}>{c.node}</React.Fragment>)}
+                  </div>
+                </>
+              ) : (
+                <div style={{ textAlign: 'center', padding: '48px 20px', color: 'rgba(255,255,255,0.25)', fontFamily: 'Space Grotesk, sans-serif', fontSize: '13px' }}>
+                  Chưa có dữ liệu để hiển thị biểu đồ.<br />
+                  <span style={{ fontSize: '11px', opacity: 0.6 }}>Tiếp tục nhập nhật ký để xem xu hướng.</span>
+                </div>
+              )}
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: '26px 0 20px' }}>
+                <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.045)' }} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '5px 13px', background: 'rgba(129,140,248,0.07)', border: '1px solid rgba(129,140,248,0.15)', borderRadius: '18px' }}>
+                  <span style={{ fontSize: '11px' }}>📡</span>
+                  <span style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: '10.5px', fontWeight: 600, color: '#a5b4fc' }}>Báo cáo AI</span>
+                </div>
+                <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.045)' }} />
               </div>
+
+              <AnalysisReportComponent report={report} loading={analyzing} />
             </>
-          ) : (
-            <div style={{ textAlign: 'center', padding: '48px 20px', color: 'rgba(255,255,255,0.25)', fontFamily: 'Space Grotesk, sans-serif', fontSize: '13px' }}>
-              Chưa có dữ liệu để hiển thị biểu đồ.<br />
-              <span style={{ fontSize: '11px', opacity: 0.6 }}>Tiếp tục nhập nhật ký để xem xu hướng.</span>
-            </div>
           )}
 
-          {/* AI Report divider */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: '26px 0 20px' }}>
-            <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.045)' }} />
-            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '5px 13px', background: 'rgba(129,140,248,0.07)', border: '1px solid rgba(129,140,248,0.15)', borderRadius: '18px' }}>
-              <span style={{ fontSize: '11px' }}>📡</span>
-              <span style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: '10.5px', fontWeight: 600, color: '#a5b4fc' }}>Báo cáo AI</span>
-            </div>
-            <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.045)' }} />
-          </div>
+          {/* ═══ TAB: SUMMARY ═══ */}
+          {tabMode === 'summary' && (
+            <LongTermSummary points={points} historyPoints={weekPoints} />
+          )}
 
-          <AnalysisReportComponent report={report} loading={analyzing} />
+          {/* ═══ TAB: SCIENCE ═══ */}
+          {tabMode === 'science' && (
+            <SciencePanel points={points} />
+          )}
 
-          {/* Hint to view full progress in History */}
           <div style={{ margin: '20px 0 0', padding: '10px 14px', background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.14)', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span style={{ fontSize: '14px' }}>📊</span>
             <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)', fontFamily: 'Space Grotesk, sans-serif', lineHeight: 1.5 }}>
